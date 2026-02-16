@@ -1,5 +1,7 @@
 import { DataSource } from "typeorm";
 import * as dotenv from "dotenv";
+import { User } from "../entities/user.entity";
+import { UserOtp } from "../entities/otp.entity";
 
 dotenv.config();
 
@@ -12,7 +14,7 @@ export const AppDataSource = new DataSource({
     database: process.env.DB_DATABASE || "football_tournament",
     synchronize: true, // Auto-create tables (dev only)
     logging: false,
-    entities: ["src/modules/**/*.entity.ts"], // Adjust path as needed
+    entities: [User, UserOtp], // Direct imports for stability
     migrations: ["src/migrations/*.ts"],
     subscribers: [],
 });
