@@ -11,7 +11,7 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-export async function sendOTPEmail(email: string, otp: string, type: "registration" | "login") {
+export async function sendOTP(email: string, otp: string, type: "registration" | "login") {
     const subject = type === "registration"
         ? "Verify Your Registration - Football Tournament"
         : "Login Verification Code - Football Tournament";
