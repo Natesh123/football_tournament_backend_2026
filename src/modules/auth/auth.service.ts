@@ -6,6 +6,7 @@ import { UserOtp } from "../../entities/otp.entity";
 import { generateOTP } from "../../utils/otp.util";
 import { generateToken, verifyToken } from "../../utils/jwt.util";
 import { sendOTP } from "../../utils/email.util";
+import { Permission } from "../../entities/permission.entity";
 
 export async function registerUser(email: string, password: string, user_name: string, phone_number: string) {
     const userRepo = AppDataSource.getRepository(User);
@@ -19,7 +20,8 @@ export async function registerUser(email: string, password: string, user_name: s
 
     const hashed = await bcrypt.hash(password, 10);
 
-    const user = userRepo.create({ email, password: hashed, user_name, phone_number });
+    // @ts-ignore
+    const user = userRepo.create({ email, password: hashed, user_name, phone_number, state: 1 });
     await userRepo.save(user);
 
     const otp = generateOTP();
@@ -58,15 +60,15 @@ export async function verifyOtp(email: string, otp: string) {
     user.is_verified = true;
     await userRepo.save(user);
 
-    // mark otp used
-    otpRow.is_used = true;
-    await otpRepo.save(otpRow);
+    const permRepo = AppDataSource.getRepository(Permission);
+    const permissions = await permRepo.findOne({ where: { roleId: user.roleId || 0 } });
 
     const token = generateToken({
         id: user.id,
         email: user.email,
         user_name: user.user_name,
-        role: user.role
+        role: user.userRole?.name || 'user',
+        permissions
     });
 
     return {
@@ -76,32 +78,42 @@ export async function verifyOtp(email: string, otp: string) {
             id: user.id,
             email: user.email,
             user_name: user.user_name,
-            role: user.role
+            role: user.userRole?.name || 'user',
+            permissions
         }
     };
 }
 
 export async function loginUser(email: string, password: string) {
+    if (!email || !password) {
+        throw new Error("Email and password are required");
+    }
     const userRepo = AppDataSource.getRepository(User);
     const cleanEmail = email.trim();
     console.log(`[Login] Attempting login for email: '${cleanEmail}' (Original: '${email}')`);
 
-    const user = await userRepo.findOne({ where: { email: cleanEmail } });
+    const user = await userRepo.findOne({
+        where: { email: cleanEmail },
+        relations: ["userRole"]
+    });
     if (!user) {
         console.log(`[Login] User not found for email: '${cleanEmail}'`);
         throw new Error("User not found");
     }
 
     const match = await bcrypt.compare(password, user.password);
-    if (!match) throw new Error("Invalid password");
-
-    if (!user.is_verified) throw new Error("User not verified");
+    if (!match) {
+        throw new Error("Invalid password");
+    }
+    const permRepo = AppDataSource.getRepository(Permission);
+    const permissions = await permRepo.findOne({ where: { roleId: user.roleId || 0 } });
 
     const token = generateToken({
         id: user.id,
         email: user.email,
         user_name: user.user_name,
-        role: user.role
+        role: user.userRole?.name || 'user',
+        permissions
     });
 
     return {
@@ -111,7 +123,8 @@ export async function loginUser(email: string, password: string) {
             id: user.id,
             email: user.email,
             user_name: user.user_name,
-            role: user.role
+            role: user.userRole?.name || 'user',
+            permissions
         }
     };
 }
@@ -120,9 +133,15 @@ export async function validateTokenService(token: string) {
     try {
         const decoded = verifyToken(token) as any;
         const userRepo = AppDataSource.getRepository(User);
-        const user = await userRepo.findOne({ where: { id: decoded.id } });
+        const user = await userRepo.findOne({
+            where: { id: decoded.id },
+            relations: ["userRole"]
+        });
 
         if (!user) throw new Error("User not found");
+
+        const permRepo = AppDataSource.getRepository(Permission);
+        const permissions = await permRepo.findOne({ where: { roleId: user.roleId || 0 } });
 
         return {
             valid: true,
@@ -130,7 +149,8 @@ export async function validateTokenService(token: string) {
                 id: user.id,
                 email: user.email,
                 user_name: user.user_name,
-                role: user.role
+                role: user.userRole?.name || 'user',
+                permissions
             }
         };
     } catch (err) {
