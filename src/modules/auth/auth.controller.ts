@@ -29,7 +29,8 @@ export async function login(req: Request, res: Response) {
         const result = await loginUser(email, password);
         res.json(result);
     } catch (err: any) {
-        res.status(400).json({ error: err.message });
+        console.error("[Login Controller] Error during login:", err);
+        res.status(400).json({ error: err.message || "Unknown login error" });
     }
 }
 
