@@ -1,4 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from "typeorm";
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from "typeorm";
+import { Team } from "../teams/team.entity";
 
 export enum TournamentStatus {
     DRAFT = "draft",
@@ -33,6 +34,9 @@ export class Tournament {
 
     @Column({ type: "int", default: 16 })
     maxTeams!: number;
+
+    @OneToMany(() => Team, (team) => team.tournament)
+    teams!: Team[];
 
     @CreateDateColumn()
     createdAt!: Date;

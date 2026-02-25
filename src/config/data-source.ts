@@ -4,6 +4,9 @@ import { User } from "../entities/user.entity";
 import { UserOtp } from "../entities/otp.entity";
 import { UserRole } from "../entities/role.entity";
 import { Permission } from "../entities/permission.entity";
+import { Tournament } from "../modules/tournaments/tournament.entity";
+import { Team } from "../modules/teams/team.entity";
+import { TeamMember } from "../modules/teams/team-member.entity";
 
 dotenv.config();
 
@@ -16,7 +19,7 @@ export const AppDataSource = new DataSource({
     database: process.env.DB_DATABASE || "football_tournament",
     synchronize: true, // Auto-create tables (dev only)
     logging: false,
-    entities: [User, UserOtp, UserRole, Permission], // Direct imports for stability
+    entities: [User, UserOtp, UserRole, Permission, Tournament, Team, TeamMember], // Direct imports for stability
     migrations: ["src/migrations/*.ts"],
     subscribers: [],
 });
