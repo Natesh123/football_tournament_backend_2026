@@ -9,4 +9,10 @@ router.post("/", TournamentController.create);
 router.put("/:id", TournamentController.update);
 router.delete("/:id", TournamentController.remove);
 
+// --- Team Registrations ---
+router.get("/:id/teams", TournamentController.getTeams);
+router.post("/:id/teams/:teamId", TournamentController.addTeam);
+router.put("/:id/teams/:teamId/status", TournamentController.updateTeamStatus);
+router.delete("/:id/teams/:teamId", TournamentController.removeTeam);
+
 export default router;

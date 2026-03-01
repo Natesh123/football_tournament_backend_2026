@@ -1,12 +1,6 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, OneToMany } from "typeorm";
-import { Tournament } from "../tournaments/tournament.entity";
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from "typeorm";
 import { TeamMember } from "./team-member.entity";
-
-export enum TeamStatus {
-    PENDING = "pending",
-    APPROVED = "approved",
-    REJECTED = "rejected",
-}
+import { TournamentTeam } from "../tournaments/tournament-team.entity";
 
 export enum TeamType {
     CLUB = "Club",
@@ -61,15 +55,8 @@ export class Team {
     @Column({ nullable: true })
     contactEmail?: string;
 
-    @Column({
-        type: "enum",
-        enum: TeamStatus,
-        default: TeamStatus.PENDING,
-    })
-    status!: TeamStatus;
-
-    @ManyToOne(() => Tournament, (tournament) => tournament.teams, { onDelete: "CASCADE" })
-    tournament!: Tournament;
+    @OneToMany(() => TournamentTeam, (registration) => registration.team)
+    tournamentRegistrations!: TournamentTeam[];
 
     @OneToMany(() => TeamMember, (member) => member.team)
     members!: TeamMember[];

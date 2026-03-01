@@ -25,7 +25,7 @@ export const TournamentController = {
 
     async create(req: Request, res: Response) {
         try {
-            const { name, description, startDate, endDate, maxTeams, status } = req.body;
+            const { name, description, startDate, endDate, maxTeams, status, shortName, type, visibility, sponsors, logo, coverImage, organizer, participantType, minTeams, regOpenDate, regCloseDate, approvalRequired, regFee, playerLimit, squadSize } = req.body;
 
             if (!name || !startDate || !endDate) {
                 return res.status(400).json({
@@ -41,6 +41,21 @@ export const TournamentController = {
                 endDate: new Date(endDate),
                 maxTeams: maxTeams || 16,
                 status,
+                shortName,
+                type,
+                visibility,
+                sponsors,
+                logo,
+                coverImage,
+                organizer,
+                participantType,
+                minTeams,
+                regOpenDate: regOpenDate ? new Date(regOpenDate) : undefined,
+                regCloseDate: regCloseDate ? new Date(regCloseDate) : undefined,
+                approvalRequired,
+                regFee,
+                playerLimit,
+                squadSize,
             });
 
             res.status(201).json({ success: true, data: tournament });
@@ -72,4 +87,48 @@ export const TournamentController = {
             res.status(500).json({ success: false, message: error.message });
         }
     },
+
+    // --- Team Registrations ---
+
+    async getTeams(req: Request, res: Response) {
+        try {
+            const teams = await TournamentService.getTeams(req.params.id as string);
+            res.json({ success: true, data: teams });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    async addTeam(req: Request, res: Response) {
+        try {
+            const data = await TournamentService.addTeam(req.params.id as string, req.params.teamId as string);
+            if (!data) return res.status(404).json({ success: false, message: "Tournament or Team not found" });
+            res.json({ success: true, data });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    async updateTeamStatus(req: Request, res: Response) {
+        try {
+            const { status, paymentStatus } = req.body;
+            const data = await TournamentService.updateTeamStatus(req.params.id as string, req.params.teamId as string, status, paymentStatus);
+            if (!data) return res.status(404).json({ success: false, message: "Registration not found" });
+            res.json({ success: true, data });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    async removeTeam(req: Request, res: Response) {
+        try {
+            const deleted = await TournamentService.removeTeam(req.params.id as string, req.params.teamId as string);
+            if (!deleted) {
+                return res.status(404).json({ success: false, message: "Registration not found" });
+            }
+            res.json({ success: true, message: "Team removed from tournament" });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    }
 };

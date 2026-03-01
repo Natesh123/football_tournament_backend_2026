@@ -1,5 +1,7 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from "typeorm";
-import { Team } from "../teams/team.entity";
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, OneToOne } from "typeorm";
+import { Organizer } from "./organizer.entity";
+import { TournamentTeam } from "./tournament-team.entity";
+
 
 export enum TournamentStatus {
     DRAFT = "draft",
@@ -35,8 +37,53 @@ export class Tournament {
     @Column({ type: "int", default: 16 })
     maxTeams!: number;
 
-    @OneToMany(() => Team, (team) => team.tournament)
-    teams!: Team[];
+    @Column({ nullable: true })
+    participantType?: string;
+
+    @Column({ type: "int", nullable: true })
+    minTeams?: number;
+
+    @Column({ type: "datetime", nullable: true })
+    regOpenDate?: Date;
+
+    @Column({ type: "datetime", nullable: true })
+    regCloseDate?: Date;
+
+    @Column({ type: "boolean", default: false })
+    approvalRequired!: boolean;
+
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
+    regFee!: number;
+
+    @Column({ type: "int", nullable: true })
+    playerLimit?: number;
+
+    @Column({ type: "int", nullable: true })
+    squadSize?: number;
+
+    @Column({ nullable: true })
+    shortName?: string;
+
+    @Column({ nullable: true })
+    type?: string;
+
+    @Column({ nullable: true })
+    visibility?: string;
+
+    @Column({ type: "longtext", nullable: true })
+    logo?: string;
+
+    @Column({ type: "longtext", nullable: true })
+    coverImage?: string;
+
+    @OneToOne(() => Organizer, (organizer) => organizer.tournament, { cascade: true })
+    organizer?: Organizer;
+
+    @Column({ nullable: true })
+    sponsors?: string;
+
+    @OneToMany(() => TournamentTeam, (registration) => registration.tournament)
+    teamRegistrations!: TournamentTeam[];
 
     @CreateDateColumn()
     createdAt!: Date;
