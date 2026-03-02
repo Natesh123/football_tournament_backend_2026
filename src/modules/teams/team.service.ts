@@ -9,20 +9,17 @@ export class TeamService {
         if (search) {
             return this.teamRepository.find({
                 where: { name: Like(`%${search}%`) },
-                relations: ["tournament"],
                 order: { createdAt: "DESC" }
             });
         }
         return this.teamRepository.find({
-            relations: ["tournament"],
             order: { createdAt: "DESC" }
         });
     }
 
     async getById(id: string) {
         return this.teamRepository.findOne({
-            where: { id },
-            relations: ["tournament"]
+            where: { id }
         });
     }
 
