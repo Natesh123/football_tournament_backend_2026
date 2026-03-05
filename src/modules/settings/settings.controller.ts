@@ -75,3 +75,13 @@ export async function deletePermission(req: Request, res: Response) {
         res.status(400).json({ error: err.message });
     }
 }
+
+export async function changePassword(req: Request, res: Response) {
+    try {
+        const { userId, oldPassword, newPassword } = req.body;
+        const result = await settingsService.changePassword(userId, oldPassword, newPassword);
+        res.json({ message: "Password updated successfully" });
+    } catch (err: any) {
+        res.status(400).json({ error: err.message });
+    }
+}
