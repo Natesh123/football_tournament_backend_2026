@@ -1,6 +1,9 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne } from "typeorm";
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToMany } from "typeorm";
 import { Tournament } from "../tournaments/tournament.entity";
 import { Team } from "../teams/team.entity";
+import { FormatStage } from "../tournaments/format-stage.entity";
+import { Group } from "../tournaments/group.entity";
+import { MatchSource } from "./match-source.entity";
 
 export enum MatchStatus {
     SCHEDULED = "scheduled",
@@ -43,6 +46,17 @@ export class Match {
 
     @Column({ nullable: true })
     bracketPosition?: number; // E.g., match number in the bracket
+
+    @ManyToOne(() => FormatStage, { nullable: true, onDelete: "CASCADE" })
+    @JoinColumn({ name: "stage_id" })
+    stage?: FormatStage;
+
+    @ManyToOne(() => Group, { nullable: true, onDelete: "CASCADE" })
+    @JoinColumn({ name: "group_id" })
+    group?: Group;
+
+    @OneToMany(() => MatchSource, (source) => source.match, { cascade: true })
+    matchSources!: MatchSource[];
 
     @CreateDateColumn()
     createdAt!: Date;

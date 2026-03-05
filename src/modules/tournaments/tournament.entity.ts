@@ -1,6 +1,8 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, OneToOne } from "typeorm";
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, OneToOne, ManyToOne } from "typeorm";
 import { Organizer } from "./organizer.entity";
 import { TournamentTeam } from "./tournament-team.entity";
+import { TournamentFormat } from "./tournament-format.entity";
+import { Match } from "../matches/match.entity";
 
 
 export enum TournamentStatus {
@@ -79,11 +81,19 @@ export class Tournament {
     @OneToOne(() => Organizer, (organizer) => organizer.tournament, { cascade: true })
     organizer?: Organizer;
 
+    @OneToOne(() => TournamentFormat, (format) => format.tournament, { cascade: ["insert", "update", "remove"] })
+    format?: TournamentFormat;
+
+
+
     @Column({ nullable: true })
     sponsors?: string;
 
     @OneToMany(() => TournamentTeam, (registration) => registration.tournament)
     teamRegistrations!: TournamentTeam[];
+
+    @OneToMany(() => Match, (match) => match.tournament)
+    matches!: Match[];
 
     @CreateDateColumn()
     createdAt!: Date;

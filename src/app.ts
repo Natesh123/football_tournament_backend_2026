@@ -7,6 +7,7 @@ import authRoutes from "./modules/auth/auth.routes";
 import settingsRoutes from "./modules/settings/settings.routes";
 import tournamentRoutes from "./modules/tournaments/tournament.routes";
 import { teamRoutes } from "./modules/teams/team.routes";
+import matchRoutes from "./modules/matches/match.routes";
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.use("/auth", authRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/tournaments", tournamentRoutes);
 app.use("/api/teams", teamRoutes);
+app.use("/api/matches", matchRoutes);
 
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
