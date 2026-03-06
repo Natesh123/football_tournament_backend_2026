@@ -1,6 +1,11 @@
+import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
-export function authGuard(req, res, next) {
+export interface AuthRequest extends Request {
+    user?: any;
+}
+
+export function authGuard(req: AuthRequest, res: Response, next: NextFunction) {
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) return res.status(401).json({ error: "No token" });
 

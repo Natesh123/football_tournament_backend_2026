@@ -9,7 +9,16 @@ import { Team } from "../modules/teams/team.entity";
 import { TeamMember } from "../modules/teams/team-member.entity";
 import { Organizer } from "../modules/tournaments/organizer.entity";
 import { TournamentTeam } from "../modules/tournaments/tournament-team.entity";
-
+import { TournamentFormat } from "../modules/tournaments/tournament-format.entity";
+import { TournamentTiebreaker } from "../modules/tournaments/tournament-tiebreaker.entity";
+import { FormatGroupSettings } from "../modules/tournaments/format-group-settings.entity";
+import { FormatKnockoutSettings } from "../modules/tournaments/format-knockout-settings.entity";
+import { FormatStage } from "../modules/tournaments/format-stage.entity";
+import { Group } from "../modules/tournaments/group.entity";
+import { GroupTeam } from "../modules/tournaments/group-team.entity";
+import { Match } from "../modules/matches/match.entity";
+import { MatchSource } from "../modules/matches/match-source.entity";
+import { Bracket } from "../modules/brackets/bracket.entity";
 
 dotenv.config();
 
@@ -22,7 +31,7 @@ export const AppDataSource = new DataSource({
     database: process.env.DB_DATABASE || "football_tournament",
     synchronize: false, // Auto-create tables disabled to prevent crash on JSON vs LONGTEXT drift
     logging: false,
-    entities: [User, UserOtp, UserRole, Permission, Tournament, Team, TeamMember, Organizer, TournamentTeam], // Direct imports for stability
+    entities: [User, UserOtp, UserRole, Permission, Tournament, Team, TeamMember, Organizer, TournamentTeam, TournamentFormat, TournamentTiebreaker, FormatGroupSettings, FormatKnockoutSettings, FormatStage, Group, GroupTeam, Match, MatchSource, Bracket], // Direct imports for stability
     migrations: ["src/migrations/*.ts"],
     subscribers: [],
 });

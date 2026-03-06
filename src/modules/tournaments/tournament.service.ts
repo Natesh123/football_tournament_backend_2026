@@ -12,14 +12,14 @@ export const TournamentService = {
     async findAll(): Promise<Tournament[]> {
         return tournamentRepo.find({
             order: { createdAt: "DESC" },
-            relations: ["organizer"]
+            relations: ["organizer", "format"]
         });
     },
 
     async findById(id: string): Promise<Tournament | null> {
         return tournamentRepo.findOne({
             where: { id },
-            relations: ["organizer"]
+            relations: ["organizer", "format"]
         });
     },
 
@@ -45,6 +45,10 @@ export const TournamentService = {
             squadSize: data.squadSize,
         });
 
+        if (data.format) {
+            tournament.format = data.format as any;
+        }
+
         if (data.logo) {
             tournament.logo = saveBase64Image(data.logo, 'tournaments');
         }
@@ -61,7 +65,7 @@ export const TournamentService = {
     async update(id: string, data: Partial<Tournament>): Promise<Tournament | null> {
         const tournament = await tournamentRepo.findOne({
             where: { id },
-            relations: ["organizer"]
+            relations: ["organizer", "format"]
         });
         if (!tournament) return null;
 
@@ -101,6 +105,10 @@ export const TournamentService = {
 
         if (data.organizer) {
             tournament.organizer = { ...tournament.organizer, ...data.organizer } as any;
+        }
+
+        if (data.format) {
+            tournament.format = { ...tournament.format, ...data.format } as any;
         }
 
         return tournamentRepo.save(tournament);

@@ -1,8 +1,10 @@
-import { Request, Response } from "express";
 import { TournamentService } from "./tournament.service";
+import { TournamentEngineService } from "./tournament-engine.service";
+
+const engineService = new TournamentEngineService();
 
 export const TournamentController = {
-    async getAll(req: Request, res: Response) {
+    async getAll(req: any, res: any) {
         try {
             const tournaments = await TournamentService.findAll();
             res.json({ success: true, data: tournaments });
@@ -11,7 +13,7 @@ export const TournamentController = {
         }
     },
 
-    async getById(req: Request, res: Response) {
+    async getById(req: any, res: any) {
         try {
             const tournament = await TournamentService.findById(req.params.id as string);
             if (!tournament) {
@@ -23,7 +25,7 @@ export const TournamentController = {
         }
     },
 
-    async create(req: Request, res: Response) {
+    async create(req: any, res: any) {
         try {
             const { name, description, startDate, endDate, maxTeams, status, shortName, type, visibility, sponsors, logo, coverImage, organizer, participantType, minTeams, regOpenDate, regCloseDate, approvalRequired, regFee, playerLimit, squadSize } = req.body;
 
@@ -64,7 +66,7 @@ export const TournamentController = {
         }
     },
 
-    async update(req: Request, res: Response) {
+    async update(req: any, res: any) {
         try {
             const tournament = await TournamentService.update(req.params.id as string, req.body);
             if (!tournament) {
@@ -76,7 +78,7 @@ export const TournamentController = {
         }
     },
 
-    async remove(req: Request, res: Response) {
+    async remove(req: any, res: any) {
         try {
             const deleted = await TournamentService.remove(req.params.id as string);
             if (!deleted) {
@@ -90,7 +92,7 @@ export const TournamentController = {
 
     // --- Team Registrations ---
 
-    async getTeams(req: Request, res: Response) {
+    async getTeams(req: any, res: any) {
         try {
             const teams = await TournamentService.getTeams(req.params.id as string);
             res.json({ success: true, data: teams });
@@ -99,7 +101,7 @@ export const TournamentController = {
         }
     },
 
-    async addTeam(req: Request, res: Response) {
+    async addTeam(req: any, res: any) {
         try {
             const data = await TournamentService.addTeam(req.params.id as string, req.params.teamId as string);
             if (!data) return res.status(404).json({ success: false, message: "Tournament or Team not found" });
@@ -109,7 +111,7 @@ export const TournamentController = {
         }
     },
 
-    async updateTeamStatus(req: Request, res: Response) {
+    async updateTeamStatus(req: any, res: any) {
         try {
             const { status, paymentStatus } = req.body;
             const data = await TournamentService.updateTeamStatus(req.params.id as string, req.params.teamId as string, status, paymentStatus);
@@ -120,13 +122,33 @@ export const TournamentController = {
         }
     },
 
-    async removeTeam(req: Request, res: Response) {
+    async removeTeam(req: any, res: any) {
         try {
             const deleted = await TournamentService.removeTeam(req.params.id as string, req.params.teamId as string);
             if (!deleted) {
                 return res.status(404).json({ success: false, message: "Registration not found" });
             }
             res.json({ success: true, message: "Team removed from tournament" });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    // --- Tournament Engine ---
+
+    async generateStructure(req: any, res: any) {
+        try {
+            const structure = await engineService.generateStructure(req.params.id as string);
+            res.json({ success: true, data: structure });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    async getStructure(req: any, res: any) {
+        try {
+            const structure = await engineService.getStructure(req.params.id as string);
+            res.json({ success: true, data: structure });
         } catch (error: any) {
             res.status(500).json({ success: false, message: error.message });
         }
