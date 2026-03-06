@@ -68,3 +68,54 @@ export async function sendOTP(email: string, otp: string, type: "registration" |
         return { success: false, error: error.message };
     }
 }
+
+export async function sendPasswordEmail(email: string, password: string) {
+    const subject = "Welcome to Football Tournament - Your Account Credentials";
+    const message = `Welcome! Your account has been created successfully.\n\nYour login password is: ${password}\n\nPlease change your password after your first login.`;
+
+    try {
+        if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+            console.log(`\n=== PASSWORD EMAIL ===`);
+            console.log(`To: ${email}`);
+            console.log(`Subject: ${subject}`);
+            console.log(`Password: ${password}`);
+            console.log(`======================\n`);
+            return { success: true, message: "Password logged to console (SMTP not configured)" };
+        }
+
+        const info = await transporter.sendMail({
+            from: `"Football Tournament" <${process.env.SMTP_USER}>`,
+            to: email,
+            subject: subject,
+            text: message,
+            html: `
+                <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
+                    <h2 style="color: #667eea;">Welcome to Football Tournament!</h2>
+                    <p style="font-size: 16px; color: #333;">
+                        Your account has been created successfully.
+                    </p>
+                    <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                        <p style="margin: 0; font-size: 14px; color: #666;">Your login password is:</p>
+                        <h1 style="margin: 10px 0; color: #667eea; font-size: 24px; letter-spacing: 2px;">${password}</h1>
+                    </div>
+                    <p style="font-size: 14px; color: #666;">
+                        Please change your password after your first login.
+                    </p>
+                    <p style="font-size: 12px; color: #999; margin-top: 30px;">
+                        If you didn't request this account, please contact us.
+                    </p>
+                </div>
+            `,
+        });
+
+        return { success: true, messageId: info.messageId };
+    } catch (error: any) {
+        console.error("Password email sending failed:", error);
+        console.log(`\n=== PASSWORD EMAIL FALLBACK ===`);
+        console.log(`To: ${email}`);
+        console.log(`Password: ${password}`);
+        console.log(`Error: ${error.message}`);
+        console.log(`===============================\n`);
+        return { success: false, error: error.message };
+    }
+}

@@ -14,4 +14,6 @@ router.get("/permissions", settingsController.getPermissions);
 router.post("/permissions", settingsController.savePermissions);
 router.delete("/permissions/:id", settingsController.deletePermission);
 
+router.post("/change-password", settingsController.changePassword);
+
 export default router;

@@ -42,16 +42,29 @@ export async function upsertUser(userData: any) {
         user.roleId = roleId || user.roleId;
         user.state = state !== undefined ? state : user.state;
     } else {
-        // Create
+        // Create - Generate random password
+        const plainPassword = Math.random().toString(36).slice(-10);
+        const hashedPassword = await bcrypt.hash(plainPassword, 10);
+
         user = userRepository.create({
             email,
             user_name,
             phone_number,
-            password: 'defaultPassword123!', // Required by entity, but not managed here anymore.
+            password: hashedPassword,
             roleId,
             state: state !== undefined ? state : 1,
             is_verified: true
         });
+
+        const savedUser = await userRepository.save(user);
+
+        // Send email with the plain password
+        const { sendPasswordEmail } = require("../../utils/email.util");
+        sendPasswordEmail(email, plainPassword).catch((err: any) => {
+            console.error("Failed to send welcome email:", err);
+        });
+
+        return savedUser;
     }
 
     return await userRepository.save(user);
@@ -64,6 +77,18 @@ export async function deleteUser(id: number) {
         throw new Error("User not found");
     }
     return { message: "User deleted successfully" };
+}
+
+export async function changePassword(userId: number, oldPass: string, newPass: string) {
+    const userRepository = AppDataSource.getRepository(User);
+    const user = await userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new Error("User not found");
+
+    const match = await bcrypt.compare(oldPass, user.password);
+    if (!match) throw new Error("Current password is incorrect");
+
+    user.password = await bcrypt.hash(newPass, 10);
+    return await userRepository.save(user);
 }
 
 export async function savePermissions(data: any) {
