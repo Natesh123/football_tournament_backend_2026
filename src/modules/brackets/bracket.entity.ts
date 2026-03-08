@@ -3,8 +3,8 @@ import { Tournament } from "../tournaments/tournament.entity";
 import { FormatStage } from "../tournaments/format-stage.entity";
 @Entity()
 export class Bracket {
-    @PrimaryGeneratedColumn("uuid")
-    id!: string;
+    @PrimaryGeneratedColumn()
+    id!: number;
 
     @OneToOne(() => Tournament)
     @JoinColumn()

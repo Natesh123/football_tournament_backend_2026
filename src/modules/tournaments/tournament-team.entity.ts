@@ -15,8 +15,8 @@ export enum TeamPaymentStatus {
 
 @Entity()
 export class TournamentTeam {
-    @PrimaryGeneratedColumn("uuid")
-    id!: string;
+    @PrimaryGeneratedColumn()
+    id!: number;
 
     @ManyToOne(() => Tournament, (tournament) => tournament.teamRegistrations, { onDelete: "CASCADE" })
     tournament!: Tournament;

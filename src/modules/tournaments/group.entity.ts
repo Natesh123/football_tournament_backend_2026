@@ -5,8 +5,8 @@ import { GroupTeam } from "./group-team.entity";
 
 @Entity("groups")
 export class Group {
-    @PrimaryGeneratedColumn("uuid")
-    id!: string;
+    @PrimaryGeneratedColumn()
+    id!: number;
 
     @ManyToOne(() => Tournament, { onDelete: "CASCADE" })
     @JoinColumn({ name: "tournament_id" })

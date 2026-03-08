@@ -20,7 +20,7 @@ export class TournamentEngineService {
 
     async generateStructure(tournamentId: string) {
         const tournament = await this.tournamentRepo.findOne({
-            where: { id: tournamentId },
+            where: { id: parseInt(tournamentId) },
             relations: ["format", "format.group_settings", "format.knockout_settings", "teamRegistrations", "teamRegistrations.team"]
         });
 
@@ -181,10 +181,10 @@ export class TournamentEngineService {
                     // Subsequent rounds depend on winners of previous round
                     // E.g. semi-final 1 depends on quarter-final 1 and 2
                     const source1 = this.matchSourceRepo.create({
-                        match: match, side: "home", source_type: "match_winner", source_value: previousRoundMatches[m * 2].id
+                        match: match, side: "home", source_type: "match_winner", source_value: previousRoundMatches[m * 2].id.toString()
                     });
                     const source2 = this.matchSourceRepo.create({
-                        match: match, side: "away", source_type: "match_winner", source_value: previousRoundMatches[m * 2 + 1].id
+                        match: match, side: "away", source_type: "match_winner", source_value: previousRoundMatches[m * 2 + 1].id.toString()
                     });
                     await this.matchSourceRepo.save([source1, source2]);
                 }
@@ -211,10 +211,11 @@ export class TournamentEngineService {
     }
 
     async getStructure(tournamentId: string) {
-        const stages = await this.stageRepo.find({ where: { format: { tournament: { id: tournamentId } } } });
-        const groups = await this.groupRepo.find({ where: { tournament: { id: tournamentId } }, relations: ["group_teams", "group_teams.team"] });
-        const matches = await this.matchRepo.find({ where: { tournament: { id: tournamentId } }, relations: ["homeTeam", "awayTeam", "group", "stage", "matchSources"] });
-        const bracket = await this.bracketRepo.findOne({ where: { tournament: { id: tournamentId } } });
+        const tId = parseInt(tournamentId);
+        const stages = await this.stageRepo.find({ where: { format: { tournament: { id: tId } } } });
+        const groups = await this.groupRepo.find({ where: { tournament: { id: tId } }, relations: ["group_teams", "group_teams.team"] });
+        const matches = await this.matchRepo.find({ where: { tournament: { id: tId } }, relations: ["homeTeam", "awayTeam", "group", "stage", "matchSources"] });
+        const bracket = await this.bracketRepo.findOne({ where: { tournament: { id: tId } } });
 
         return { stages, groups, matches, bracket };
     }

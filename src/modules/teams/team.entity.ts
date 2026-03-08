@@ -12,8 +12,8 @@ export enum TeamType {
 
 @Entity()
 export class Team {
-    @PrimaryGeneratedColumn("uuid")
-    id!: string;
+    @PrimaryGeneratedColumn()
+    id!: number;
 
     @Column()
     name!: string;

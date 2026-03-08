@@ -13,8 +13,8 @@ export enum MatchStatus {
 
 @Entity()
 export class Match {
-    @PrimaryGeneratedColumn("uuid")
-    id!: string;
+    @PrimaryGeneratedColumn()
+    id!: number;
 
     @ManyToOne(() => Tournament, (tournament) => tournament.matches, { onDelete: "CASCADE" })
     tournament!: Tournament;
