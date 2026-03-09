@@ -18,7 +18,7 @@ export const TournamentService = {
 
     async findById(id: string): Promise<Tournament | null> {
         return tournamentRepo.findOne({
-            where: { id },
+            where: { id: parseInt(id) },
             relations: ["organizer", "format"]
         });
     },
@@ -64,7 +64,7 @@ export const TournamentService = {
 
     async update(id: string, data: Partial<Tournament>): Promise<Tournament | null> {
         const tournament = await tournamentRepo.findOne({
-            where: { id },
+            where: { id: parseInt(id) },
             relations: ["organizer", "format"]
         });
         if (!tournament) return null;
@@ -123,21 +123,21 @@ export const TournamentService = {
 
     async getTeams(tournamentId: string): Promise<TournamentTeam[]> {
         return tournamentTeamRepo.find({
-            where: { tournament: { id: tournamentId } },
+            where: { tournament: { id: parseInt(tournamentId) } },
             relations: ["team"],
             order: { createdAt: "DESC" }
         });
     },
 
     async addTeam(tournamentId: string, teamId: string): Promise<TournamentTeam | null> {
-        const tournament = await tournamentRepo.findOneBy({ id: tournamentId });
-        const team = await teamRepo.findOneBy({ id: teamId });
+        const tournament = await tournamentRepo.findOneBy({ id: parseInt(tournamentId) });
+        const team = await teamRepo.findOneBy({ id: parseInt(teamId) });
 
         if (!tournament || !team) return null;
 
         // Check if already registered
         const existing = await tournamentTeamRepo.findOne({
-            where: { tournament: { id: tournamentId }, team: { id: teamId } }
+            where: { tournament: { id: parseInt(tournamentId) }, team: { id: parseInt(teamId) } }
         });
 
         if (existing) return existing;
@@ -154,7 +154,7 @@ export const TournamentService = {
 
     async updateTeamStatus(tournamentId: string, teamId: string, status?: TeamStatus, paymentStatus?: TeamPaymentStatus): Promise<TournamentTeam | null> {
         const registration = await tournamentTeamRepo.findOne({
-            where: { tournament: { id: tournamentId }, team: { id: teamId } }
+            where: { tournament: { id: parseInt(tournamentId) }, team: { id: parseInt(teamId) } }
         });
 
         if (!registration) return null;
@@ -167,8 +167,8 @@ export const TournamentService = {
 
     async removeTeam(tournamentId: string, teamId: string): Promise<boolean> {
         const result = await tournamentTeamRepo.delete({
-            tournament: { id: tournamentId },
-            team: { id: teamId }
+            tournament: { id: parseInt(tournamentId) },
+            team: { id: parseInt(teamId) }
         });
         return (result.affected ?? 0) > 0;
     }

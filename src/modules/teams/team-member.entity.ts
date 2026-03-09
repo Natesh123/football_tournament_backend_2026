@@ -10,8 +10,8 @@ export enum TeamMemberRole {
 
 @Entity()
 export class TeamMember {
-    @PrimaryGeneratedColumn("uuid")
-    id!: string;
+    @PrimaryGeneratedColumn()
+    id!: number;
 
     @Column()
     name!: string;

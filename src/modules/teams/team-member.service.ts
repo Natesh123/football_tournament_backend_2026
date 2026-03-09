@@ -8,13 +8,13 @@ export class TeamMemberService {
 
     async getByTeamId(teamId: string) {
         return this.memberRepository.find({
-            where: { team: { id: teamId } },
+            where: { team: { id: parseInt(teamId) } },
             order: { name: "ASC" }
         });
     }
 
     async create(teamId: string, data: Partial<TeamMember>) {
-        const team = await this.teamRepository.findOneBy({ id: teamId });
+        const team = await this.teamRepository.findOneBy({ id: parseInt(teamId) });
         if (!team) {
             throw new Error("Team not found");
         }

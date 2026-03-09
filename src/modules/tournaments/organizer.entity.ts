@@ -3,8 +3,8 @@ import { Tournament } from "./tournament.entity";
 
 @Entity()
 export class Organizer {
-    @PrimaryGeneratedColumn("uuid")
-    id!: string;
+    @PrimaryGeneratedColumn()
+    id!: number;
 
     @Column({ nullable: true })
     name?: string;

@@ -14,8 +14,8 @@ export enum TournamentStatus {
 
 @Entity()
 export class Tournament {
-    @PrimaryGeneratedColumn("uuid")
-    id!: string;
+    @PrimaryGeneratedColumn()
+    id!: number;
 
     @Column()
     name!: string;

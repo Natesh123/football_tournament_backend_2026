@@ -3,8 +3,8 @@ import { Match } from "./match.entity";
 
 @Entity("match_sources")
 export class MatchSource {
-    @PrimaryGeneratedColumn("uuid")
-    id!: string;
+    @PrimaryGeneratedColumn()
+    id!: number;
 
     @ManyToOne(() => Match, (match) => match.matchSources, { onDelete: "CASCADE" })
     @JoinColumn({ name: "match_id" })

@@ -19,7 +19,7 @@ export class TeamService {
 
     async getById(id: string) {
         return this.teamRepository.findOne({
-            where: { id }
+            where: { id: parseInt(id) }
         });
     }
 

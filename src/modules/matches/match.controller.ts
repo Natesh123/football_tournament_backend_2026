@@ -64,7 +64,7 @@ export const MatchController = {
             // If knockout match, propagate winner
             if (match.stage && match.stage.stage_type === "knockout") {
                 const pendingSources = await matchSourceRepo.find({
-                    where: { source_type: "match_winner", source_value: match.id },
+                    where: { source_type: "match_winner", source_value: match.id.toString() },
                     relations: ["match"]
                 });
 

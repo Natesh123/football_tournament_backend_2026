@@ -40,8 +40,8 @@ export class TeamController {
 
             // 2. If a logo was uploaded, move it from temp → uploads/teams/{teamId}/logo/
             if (tempFile) {
-                const logoUrl = moveLogoToTeamFolder(tempFile.path, team.id);
-                await this.teamService.updateLogoUrl(team.id, logoUrl);
+                const logoUrl = moveLogoToTeamFolder(tempFile.path, team.id.toString());
+                await this.teamService.updateLogoUrl(team.id.toString(), logoUrl);
                 team.logoUrl = logoUrl;
             }
 
