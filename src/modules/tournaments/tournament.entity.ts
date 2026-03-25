@@ -3,6 +3,7 @@ import { Organizer } from "./organizer.entity";
 import { TournamentTeam } from "./tournament-team.entity";
 import { TournamentFormat } from "./tournament-format.entity";
 import { Match } from "../matches/match.entity";
+import { TournamentRules } from "./tournament-rules.entity";
 
 
 export enum TournamentStatus {
@@ -84,6 +85,9 @@ export class Tournament {
     @OneToOne(() => TournamentFormat, (format) => format.tournament, { cascade: ["insert", "update", "remove"] })
     format?: TournamentFormat;
 
+    @OneToOne(() => TournamentRules, (rules) => rules.tournament, { cascade: ["insert", "update", "remove"] })
+    rules?: TournamentRules;
+
 
 
     @Column({ nullable: true })
@@ -94,6 +98,9 @@ export class Tournament {
 
     @OneToMany(() => Match, (match) => match.tournament)
     matches!: Match[];
+
+    @Column({ name: "auto_publish_results", type: "boolean", default: false })
+    autoPublishResults?: boolean;
 
     @CreateDateColumn()
     createdAt!: Date;

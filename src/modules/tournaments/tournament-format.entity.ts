@@ -44,6 +44,9 @@ export class TournamentFormat {
     @Column({ type: "int", default: 0 })
     loss_points!: number;
 
+    @Column({ type: "json", nullable: true })
+    format_data?: any;
+
     @CreateDateColumn({ name: "created_at" })
     created_at!: Date;
 

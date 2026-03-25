@@ -1,4 +1,5 @@
 import { AppDataSource } from "../../config/data-source";
+import { Team } from "../teams/team.entity";
 import { Tournament } from "./tournament.entity";
 import { TournamentFormat } from "./tournament-format.entity";
 import { FormatStage } from "./format-stage.entity";
@@ -18,7 +19,7 @@ export class TournamentEngineService {
     private matchSourceRepo = AppDataSource.getRepository(MatchSource);
     private bracketRepo = AppDataSource.getRepository(Bracket);
 
-    async generateStructure(tournamentId: string) {
+    async generateStructure(tournamentId: string, scheduleConfig?: any) {
         const tournament = await this.tournamentRepo.findOne({
             where: { id: parseInt(tournamentId) },
             relations: ["format", "format.group_settings", "format.knockout_settings", "teamRegistrations", "teamRegistrations.team"]
@@ -28,19 +29,212 @@ export class TournamentEngineService {
             throw new Error("Tournament or format not found");
         }
 
-        const { formatType } = tournament.format as any; // Cast for now
+        // Clean slate: delete all existing structure for this tournament
+        await this.purgeExistingStructure(parseInt(tournamentId));
 
-        // Switch based on enum format type
-        if (tournament.format.format_type === "groups") {
-            await this.generateGroupsPhase(tournament);
-        } else if (tournament.format.format_type === "groups_knockout") {
-            await this.generateGroupsPhase(tournament);
-            await this.generateKnockoutPhase(tournament);
-        } else if (tournament.format.format_type === "knockout") {
-            await this.generateKnockoutPhase(tournament);
+        if (tournament.format.format_data && Array.isArray(tournament.format.format_data) && tournament.format.format_data.length > 0) {
+            // Intelligent Custom Generator based on visual board
+            await this.generateFromFormatData(tournament, tournament.format.format_data);
+        } else {
+            // Legacy Switch based on enum format type
+            if (tournament.format.format_type === "groups") {
+                await this.generateGroupsPhase(tournament);
+            } else if (tournament.format.format_type === "groups_knockout") {
+                await this.generateGroupsPhase(tournament);
+                await this.generateKnockoutPhase(tournament);
+            } else if (tournament.format.format_type === "knockout") {
+                await this.generateKnockoutPhase(tournament);
+            }
+        }
+
+        if (scheduleConfig && scheduleConfig.startDate) {
+            await this.applyAutoSchedule(tournamentId, scheduleConfig);
         }
 
         return this.getStructure(tournamentId);
+    }
+
+    private async purgeExistingStructure(tournamentId: number) {
+        // Delete all matches, groups, and stages associated with the tournament
+        // Matches have dependencies on MatchSource and GroupTeam (via cascading or manually)
+
+        // Find existing matches
+        const matches = await this.matchRepo.find({ where: { tournament: { id: tournamentId } } });
+        if (matches.length > 0) {
+            const matchIds = matches.map(m => m.id);
+            await this.matchSourceRepo.delete({ match: { id: process.env.DB_TYPE === 'mysql' ? null : null as any } }); // Simplify raw query deletion
+
+            for (const matchId of matchIds) {
+                await this.matchSourceRepo.delete({ match: { id: matchId } });
+            }
+            await this.matchRepo.delete(matchIds);
+        }
+
+        const groups = await this.groupRepo.find({ where: { tournament: { id: tournamentId } } });
+        if (groups.length > 0) {
+            const groupIds = groups.map(g => g.id);
+            for (const groupId of groupIds) {
+                await this.groupTeamRepo.delete({ group: { id: groupId } });
+            }
+            await this.groupRepo.delete(groupIds);
+        }
+
+        const stages = await this.stageRepo.find({ where: { format: { id: tournamentId.toString() } } }); // Format is 1:1 with tournament mostly, but actually stage relations might be messy.
+        // Let's rely on standard TypeORM or delete directly.
+        await AppDataSource.query(`DELETE FROM format_stages WHERE format_id IN (SELECT id FROM tournament_formats WHERE tournament_id = ?)`, [tournamentId]);
+    }
+
+    private async generateFromFormatData(tournament: Tournament, formatData: any[]) {
+        const teamsMap = new Map<string, Team>();
+        for (const reg of tournament.teamRegistrations) {
+            if (reg.team) teamsMap.set(reg.team.name, reg.team);
+        }
+
+        let stageOrder = 1;
+        for (const phase of formatData) {
+            const isGroup = phase.kind === 'group';
+
+            // Create Stage
+            const stage = this.stageRepo.create({
+                format: tournament.format,
+                stage_order: stageOrder++,
+                stage_type: isGroup ? "group" : "knockout",
+                stage_name: phase.name || (isGroup ? "Group Stage" : "Knockout Stage"),
+                teams_count: 0 // Will calculate if needed
+            });
+            await this.stageRepo.save(stage);
+
+            if (isGroup && phase.groups) {
+                for (const groupData of phase.groups) {
+                    const group = this.groupRepo.create({
+                        tournament: tournament,
+                        stage: stage,
+                        group_name: groupData.name
+                    });
+                    const savedGroup = await this.groupRepo.save(group);
+
+                    // Map slots to actual teams
+                    const assignedTeams: Team[] = [];
+                    for (const slot of groupData.slots) {
+                        const team = teamsMap.get(slot.label);
+                        if (team) {
+                            assignedTeams.push(team);
+                            const groupTeam = this.groupTeamRepo.create({
+                                group: savedGroup,
+                                team: team,
+                                played: 0, wins: 0, draws: 0, losses: 0,
+                                goals_for: 0, goals_against: 0, goal_difference: 0, points: 0, position: 0
+                            });
+                            await this.groupTeamRepo.save(groupTeam);
+                        }
+                    }
+
+                    // Generate Round Robin Matches for assigned teams
+                    for (let i = 0; i < assignedTeams.length; i++) {
+                        for (let j = i + 1; j < assignedTeams.length; j++) {
+                            const match = this.matchRepo.create({
+                                tournament: tournament,
+                                stage: stage,
+                                group: savedGroup,
+                                homeTeam: assignedTeams[i],
+                                awayTeam: assignedTeams[j],
+                                startTime: new Date() // Will be overwritten by Auto Schedule
+                            });
+                            await this.matchRepo.save(match);
+                        }
+                    }
+                }
+            } else if (!isGroup && phase.rounds) {
+                // Knockout logic based closely on UI rounds
+                let roundIdx = 1;
+                for (const roundData of phase.rounds) {
+                    let matchCounter = 1;
+                    for (const matchData of roundData.matches) {
+                        const match = this.matchRepo.create({
+                            tournament: tournament,
+                            stage: stage,
+                            round: roundIdx,
+                            bracketPosition: matchCounter++,
+                            startTime: new Date()
+                        });
+
+                        const homeTeam = teamsMap.get(matchData.home);
+                        if (homeTeam) match.homeTeam = homeTeam;
+
+                        const awayTeam = teamsMap.get(matchData.away);
+                        if (awayTeam) match.awayTeam = awayTeam;
+
+                        await this.matchRepo.save(match);
+
+                        // Linking matches conditionally could be added here if needed, 
+                        // but the front-end renders knockouts based on positions usually.
+                    }
+                    roundIdx++;
+                }
+            }
+        }
+    }
+
+    private async applyAutoSchedule(tournamentId: string, config: any) {
+        const matches = await this.matchRepo.find({
+            where: { tournament: { id: parseInt(tournamentId) } },
+            relations: ["stage", "group"],
+            order: {
+                stage: { stage_order: "ASC" },
+                round: "ASC",
+                group: { group_name: "ASC" },
+                id: "ASC"
+            }
+        });
+
+        if (matches.length === 0) {
+            console.log("[AutoSchedule] No matches found for tournament", tournamentId);
+            return;
+        }
+
+        console.log(`[AutoSchedule] Found ${matches.length} matches. Starting config:`, config);
+
+        let currentDate = new Date(config.startDate);
+        const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+        const allowedDays = config.matchDays || { 'SAT': true, 'SUN': true }; // Default weekend
+        const timeSlots = (config.timeSlots || "18:00").split(',').map((s: string) => s.trim()).filter((s: string) => s);
+        if (timeSlots.length === 0) timeSlots.push("18:00");
+
+        let currentSlotIdx = 0;
+
+        for (const match of matches) {
+            let assigned = false;
+            let loopCounter = 0;
+            // Find next valid day and time
+            while (!assigned && loopCounter < 1000) {
+                loopCounter++;
+                const dayStr = dayNames[currentDate.getDay()];
+                if (allowedDays[dayStr]) {
+                    if (currentSlotIdx < timeSlots.length) {
+                        const timeStr = timeSlots[currentSlotIdx];
+                        const [hh, mm] = timeStr.split(':').map(Number);
+
+                        const matchTime = new Date(currentDate);
+                        matchTime.setHours(hh || 12, mm || 0, 0, 0);
+
+                        match.startTime = matchTime;
+                        assigned = true;
+                        console.log(`[AutoSchedule] Assigned Match ${match.id} to ${matchTime.toISOString()} (${dayStr})`);
+
+                        currentSlotIdx++;
+                    }
+                }
+
+                if (!assigned) {
+                    // Move to next day
+                    currentDate.setDate(currentDate.getDate() + 1);
+                    currentSlotIdx = 0;
+                }
+            }
+            if (!assigned) console.log(`[AutoSchedule] Failed to assign match ${match.id}`);
+            await this.matchRepo.save(match);
+        }
+        console.log("[AutoSchedule] Completed auto-scheduling.");
     }
 
     private async generateGroupsPhase(tournament: Tournament) {
@@ -217,6 +411,53 @@ export class TournamentEngineService {
         const matches = await this.matchRepo.find({ where: { tournament: { id: tId } }, relations: ["homeTeam", "awayTeam", "group", "stage", "matchSources"] });
         const bracket = await this.bracketRepo.findOne({ where: { tournament: { id: tId } } });
 
-        return { stages, groups, matches, bracket };
+        const mappedMatches = matches.map(match => {
+            if (match.stage?.stage_type === "knockout") {
+                // Hide match if both teams are NULL
+                if (!match.homeTeam && !match.awayTeam) return null;
+
+                const m: any = { ...match };
+
+                if (!m.homeTeam) {
+                    let label = `Winner of Match ${match.bracketPosition || 'TBD'}`;
+                    const src = match.matchSources?.find(s => s.side === "home" && s.source_type === "match_winner");
+                    if (src) {
+                        const prevMatch = matches.find(pm => pm.id.toString() === src.source_value);
+                        if (prevMatch) {
+                            const abbr = this.getRoundAbbr(prevMatch);
+                            label = `Winner of ${abbr}${prevMatch.bracketPosition || ''}`;
+                        }
+                    }
+                    m.homeTeam = { label, slot: match.bracketPosition };
+                }
+
+                if (!m.awayTeam) {
+                    let label = `Winner of Match ${match.bracketPosition || 'TBD'}`;
+                    const src = match.matchSources?.find(s => s.side === "away" && s.source_type === "match_winner");
+                    if (src) {
+                        const prevMatch = matches.find(pm => pm.id.toString() === src.source_value);
+                        if (prevMatch) {
+                            const abbr = this.getRoundAbbr(prevMatch);
+                            label = `Winner of ${abbr}${prevMatch.bracketPosition || ''}`;
+                        }
+                    }
+                    m.awayTeam = { label, slot: match.bracketPosition };
+                }
+
+                return m;
+            }
+            return match;
+        }).filter(m => m !== null);
+
+        return { stages, groups, matches: mappedMatches, bracket };
+    }
+
+    private getRoundAbbr(match: Match): string {
+        const teamsCount = match.stage?.teams_count || 16;
+        const currentTeams = teamsCount / Math.pow(2, (match.round || 1) - 1);
+        if (currentTeams === 2) return "F";
+        if (currentTeams === 4) return "SF";
+        if (currentTeams === 8) return "QF";
+        return `R${currentTeams}-`;
     }
 }

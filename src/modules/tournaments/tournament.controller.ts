@@ -111,6 +111,26 @@ export const TournamentController = {
         }
     },
 
+    async addTeamsBulk(req: any, res: any) {
+        try {
+            const { teamIds } = req.body;
+            if (!teamIds || !Array.isArray(teamIds)) {
+                return res.status(400).json({ success: false, message: "teamIds array is required" });
+            }
+
+            const results = [];
+            for (const teamId of teamIds) {
+                const data = await TournamentService.addTeam(req.params.id as string, teamId.toString());
+                if (data) {
+                    results.push(data);
+                }
+            }
+            res.json({ success: true, data: results });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
     async updateTeamStatus(req: any, res: any) {
         try {
             const { status, paymentStatus } = req.body;
@@ -138,9 +158,11 @@ export const TournamentController = {
 
     async generateStructure(req: any, res: any) {
         try {
-            const structure = await engineService.generateStructure(req.params.id as string);
+            console.log("[Tournament Controller] Generate Structure payload:", req.body);
+            const structure = await engineService.generateStructure(req.params.id as string, req.body);
             res.json({ success: true, data: structure });
         } catch (error: any) {
+            console.error("[Tournament Controller] Error:", error);
             res.status(500).json({ success: false, message: error.message });
         }
     },

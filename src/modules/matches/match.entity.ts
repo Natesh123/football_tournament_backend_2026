@@ -4,11 +4,21 @@ import { Team } from "../teams/team.entity";
 import { FormatStage } from "../tournaments/format-stage.entity";
 import { Group } from "../tournaments/group.entity";
 import { MatchSource } from "./match-source.entity";
+import { MatchEvent } from "./match-event.entity";
 
 export enum MatchStatus {
     SCHEDULED = "scheduled",
     LIVE = "live",
     COMPLETED = "completed",
+}
+
+export enum MatchPeriod {
+    NOT_STARTED = "not_started",
+    FIRST_HALF = "first_half",
+    HALF_TIME = "half_time",
+    SECOND_HALF = "second_half",
+    EXTRA_TIME = "extra_time",
+    PENALTIES = "penalties",
 }
 
 @Entity()
@@ -42,6 +52,36 @@ export class Match {
     status!: MatchStatus;
 
     @Column({ nullable: true })
+    venue?: string;
+
+    @Column({ type: "int", nullable: true })
+    breakDuration?: number; // In minutes
+
+    @Column({ type: "tinyint", nullable: true })
+    live_minute?: number;
+
+    @Column({
+        type: "enum",
+        enum: MatchPeriod,
+        default: MatchPeriod.NOT_STARTED,
+    })
+    match_period!: MatchPeriod;
+
+    // events text column dropped — data migrated to match_events table
+
+    @Column({ type: "text", nullable: true })
+    matchReferees?: string;
+
+    @Column({ type: "json", nullable: true })
+    referees?: any;
+
+    @Column({ type: "json", nullable: true })
+    homeLineup?: any;
+
+    @Column({ type: "json", nullable: true })
+    awayLineup?: any;
+
+    @Column({ nullable: true })
     round?: number;
 
     @Column({ nullable: true })
@@ -58,9 +98,24 @@ export class Match {
     @OneToMany(() => MatchSource, (source) => source.match, { cascade: true })
     matchSources!: MatchSource[];
 
+    @OneToMany(() => MatchEvent, (event) => event.match, { cascade: true })
+    matchEvents!: MatchEvent[];
+
+    @Column({ type: "json", nullable: true })
+    stats?: any;
+
     @CreateDateColumn()
     createdAt!: Date;
 
     @UpdateDateColumn()
     updatedAt!: Date;
+
+    get result(): "home" | "away" | "draw" | null {
+        if (this.status === MatchStatus.COMPLETED) {
+            if (this.homeScore > this.awayScore) return "home";
+            if (this.homeScore < this.awayScore) return "away";
+            return "draw";
+        }
+        return null;
+    }
 }
