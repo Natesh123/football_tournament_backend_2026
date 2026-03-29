@@ -1,0 +1,67 @@
+import { IncomingMessage, ServerResponse } from "http";
+import { FinanceService } from "./finance.service";
+
+const financeService = new FinanceService();
+
+function parseBody(req: IncomingMessage): Promise<any> {
+    return new Promise((resolve, reject) => {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', () => {
+            try {
+                resolve(body ? JSON.parse(body) : {});
+            } catch (err) {
+                reject(err);
+            }
+        });
+        req.on('error', reject);
+    });
+}
+
+function sendJSON(res: ServerResponse, status: number, data: any) {
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(data));
+}
+
+export default async function handleFinanceRoutes(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+    const url = req.url ?? '';
+    const method = req.method ?? '';
+    const idMatch = url.match(/\/api\/tournaments\/([a-zA-Z0-9-]+)\/finance/);
+
+    if (idMatch) {
+        const tournamentId = Number(idMatch[1]);
+        if (isNaN(tournamentId)) return false;
+
+        if (method === "GET") {
+            try {
+                const data = await financeService.getFinance(tournamentId);
+                sendJSON(res, 200, data);
+                return true;
+            } catch (err: any) {
+                sendJSON(res, 500, { error: err.message });
+                return true;
+            }
+        }
+
+        if (method === "POST" || method === "PUT") {
+            try {
+                const body = await parseBody(req);
+                const financeData = body.finance || {};
+                const prizePoolData = body.prizePool || {};
+                
+                const result = await financeService.upsertFinance(tournamentId, financeData, prizePoolData);
+                sendJSON(res, 201, result);
+                return true;
+            } catch (err: any) {
+                if (err.message === "Tournament not found" || err.message === "Prize pool percentages must equal exactly 100") {
+                    sendJSON(res, 400, { error: err.message });
+                    return true;
+                }
+                sendJSON(res, 500, { error: err.message });
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
