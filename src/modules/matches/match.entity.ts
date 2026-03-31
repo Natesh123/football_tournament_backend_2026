@@ -1,4 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToMany } from "typeorm";
+// Triggering restart for migration
 import { Tournament } from "../tournaments/tournament.entity";
 import { Team } from "../teams/team.entity";
 import { FormatStage } from "../tournaments/format-stage.entity";
@@ -103,6 +104,9 @@ export class Match {
 
     @Column({ type: "json", nullable: true })
     stats?: any;
+
+    @Column({ type: "datetime", nullable: true })
+    periodStartedAt?: Date;
 
     @CreateDateColumn()
     createdAt!: Date;

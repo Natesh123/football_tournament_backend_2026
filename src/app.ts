@@ -9,6 +9,7 @@ import tournamentRoutes from "./modules/tournaments/tournament.routes";
 import { teamRoutes } from "./modules/teams/team.routes";
 import matchRoutes from "./modules/matches/match.routes";
 import publicRoutes from "./modules/public/public.routes";
+import dashboardRoutes from "./modules/dashboard/dashboard.routes";
 
 const app = express();
 
@@ -21,23 +22,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
-import handleVenueRoutes from "./modules/tournaments/venues/venue.routes";
-import handleFinanceRoutes from "./modules/tournaments/finance/finance.routes";
-import handlePresentationRoutes from "./modules/tournaments/presentation/presentation.routes";
-import handleResultsRoutes from "./modules/tournaments/results/results.routes";
 
-// Custom HTTP Routes Middleware
-app.use(async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    try {
-        if (await handleVenueRoutes(req, res)) return;
-        if (await handleFinanceRoutes(req, res)) return;
-        if (await handlePresentationRoutes(req, res)) return;
-        if (await handleResultsRoutes(req, res)) return;
-        next();
-    } catch (err) {
-        next(err);
-    }
-});
 
 // Routes
 app.use("/api/health", healthRoutes);
@@ -47,6 +32,7 @@ app.use("/api/tournaments", tournamentRoutes);
 app.use("/api/teams", teamRoutes);
 app.use("/api/matches", matchRoutes);
 app.use("/api/public", publicRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

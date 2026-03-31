@@ -6,7 +6,7 @@ const engineService = new TournamentEngineService();
 export const TournamentController = {
     async getAll(req: any, res: any) {
         try {
-            const tournaments = await TournamentService.findAll();
+            const tournaments = await TournamentService.findAll(req.user);
             res.json({ success: true, data: tournaments });
         } catch (error: any) {
             res.status(500).json({ success: false, message: error.message });
@@ -37,6 +37,7 @@ export const TournamentController = {
             }
 
             const tournament = await TournamentService.create({
+                ownerId: req.user?.id,
                 name,
                 description,
                 startDate: new Date(startDate),

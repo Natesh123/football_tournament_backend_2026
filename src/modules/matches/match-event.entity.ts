@@ -18,6 +18,10 @@ export enum MatchEventType {
     SUBSTITUTION = "substitution",
     PENALTY      = "penalty",
     OWN_GOAL     = "own_goal",
+    CORNER       = "corner",
+    FOUL         = "foul",
+    OFFSIDE      = "offside",
+    FREE_KICK    = "free_kick",
 }
 
 /** Which side of the match the event belongs to */
