@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { TournamentController } from "./tournament.controller";
 import rulesRouter from "./tournament-rules.routes";
+import venueRouter from "./venues/venue.routes";
+import financeRouter from "./finance/finance.routes";
+import presentationRouter from "./presentation/presentation.routes";
+import resultsRouter from "./results/results.routes";
 
 const router = Router();
 
@@ -23,5 +27,11 @@ router.get("/:id/structure", TournamentController.getStructure);
 
 // --- Match Rules ---
 router.use("/:id/rules", rulesRouter);
+
+// --- Sub-resource Routes ---
+router.use("/:id/venues", venueRouter);
+router.use("/:id/finance", financeRouter);
+router.use("/:id/presentation", presentationRouter);
+router.use("/:id/results", resultsRouter);
 
 export default router;

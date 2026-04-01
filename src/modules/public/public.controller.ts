@@ -34,13 +34,15 @@ export const PublicController = {
                 where: { tournament: { id: tournamentId } }
             });
 
-            // Default presentation logic to avoid nulls
+            // Default presentation logic to avoid nulls/mismatches with Admin defaults
             const portalSettings = {
                 brandColor: presentation?.brandColor || "#FFC107",
-                welcomeMessage: presentation?.welcomeMessage || `Welcome to ${tournament.name}`,
+                welcomeMessage: presentation?.welcomeMessage !== undefined ? presentation.welcomeMessage : `Welcome to ${tournament.name}`,
                 showStandings: presentation ? Boolean(presentation.showStandingsWidget) : true,
                 showTopScorers: presentation ? Boolean(presentation.showTopScorers) : true,
-                showLiveMatches: presentation ? Boolean(presentation.liveBroadcastEnabled) : true
+                showLiveMatches: presentation ? Boolean(presentation.liveBroadcastEnabled) : false,
+                showRecentResults: presentation ? Boolean(presentation.showRecentResults) : true,
+                liveStreamLink: presentation?.liveStreamLink || ""
             };
 
             // Fetch Standings

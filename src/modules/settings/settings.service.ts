@@ -39,7 +39,10 @@ export async function upsertUser(userData: any) {
         user.email = email || user.email;
         user.user_name = user_name || user.user_name;
         user.phone_number = phone_number || user.phone_number;
-        user.roleId = roleId || user.roleId;
+        if (roleId) {
+            user.roleId = roleId;
+            user.userRole = { id: roleId } as any;
+        }
         user.state = state !== undefined ? state : user.state;
     } else {
         // Create - Generate random password

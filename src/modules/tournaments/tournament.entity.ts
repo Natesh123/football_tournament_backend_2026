@@ -99,8 +99,8 @@ export class Tournament {
     @OneToMany(() => Match, (match) => match.tournament)
     matches!: Match[];
 
-    @Column({ name: "auto_publish_results", type: "boolean", default: false })
-    autoPublishResults?: boolean;
+    @Column({ nullable: true })
+    ownerId?: number;
 
     @CreateDateColumn()
     createdAt!: Date;

@@ -18,6 +18,9 @@ async function startServer(retries = 0) {
             console.log("Press Ctrl+C to stop the server");
         });
 
+        const { initSocket } = require("./socket");
+        initSocket(server);
+
         server.on("error", (err: any) => {
             if (err.code === "EADDRINUSE") {
                 console.error(`Error: Port ${PORT} is already in use.`);
