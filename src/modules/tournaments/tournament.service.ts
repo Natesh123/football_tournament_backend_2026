@@ -199,9 +199,12 @@ export const TournamentService = {
             .orderBy("tournament.createdAt", "DESC");
 
         if (user) {
-            if (user.role === 'organizer') {
+            const userRole = user.role?.toLowerCase() || '';
+            if (userRole === 'admin') {
+                // Admins see all tournaments
+            } else if (userRole === 'organizer') {
                 query.andWhere("tournament.ownerId = :userId", { userId: user.id });
-            } else if (user.role !== 'admin') {
+            } else {
                 query.andWhere("tournament.visibility = :visibility", { visibility: 'public' });
             }
         }
