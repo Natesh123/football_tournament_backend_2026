@@ -75,9 +75,12 @@ export const DashboardController = {
                 .leftJoinAndSelect("match.stage", "stage")
                 .where("match.status = :status", { status: MatchStatus.LIVE });
 
-            if (req.user?.role === 'organizer') {
+            const userRole = req.user?.role?.toLowerCase() || '';
+            if (userRole === 'admin') {
+                // Admin sees all matches
+            } else if (userRole === 'organizer') {
                 query.andWhere("tournament.ownerId = :userId", { userId: req.user.id });
-            } else if (req.user?.role !== 'admin') {
+            } else {
                 query.andWhere("tournament.visibility = :visibility", { visibility: 'public' });
             }
 
@@ -131,9 +134,12 @@ export const DashboardController = {
                 .where("match.status = :status", { status: MatchStatus.SCHEDULED })
                 .andWhere("match.startTime >= :now", { now });
 
-            if (req.user?.role === 'organizer') {
+            const userRole = req.user?.role?.toLowerCase() || '';
+            if (userRole === 'admin') {
+                // Admin sees all matches
+            } else if (userRole === 'organizer') {
                 query.andWhere("tournament.ownerId = :userId", { userId: req.user.id });
-            } else if (req.user?.role !== 'admin') {
+            } else {
                 query.andWhere("tournament.visibility = :visibility", { visibility: 'public' });
             }
 
@@ -181,9 +187,12 @@ export const DashboardController = {
                 .leftJoinAndSelect("match.tournament", "tournament")
                 .where("match.status = :status", { status: MatchStatus.COMPLETED });
 
-            if (req.user?.role === 'organizer') {
+            const userRole = req.user?.role?.toLowerCase() || '';
+            if (userRole === 'admin') {
+                // Admin sees all matches
+            } else if (userRole === 'organizer') {
                 query.andWhere("tournament.ownerId = :userId", { userId: req.user.id });
-            } else if (req.user?.role !== 'admin') {
+            } else {
                 query.andWhere("tournament.visibility = :visibility", { visibility: 'public' });
             }
 
