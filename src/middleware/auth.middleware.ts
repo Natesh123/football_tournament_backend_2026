@@ -10,7 +10,7 @@ export function authGuard(req: AuthRequest, res: Response, next: NextFunction) {
     if (!token) return res.status(401).json({ error: "No token" });
 
     try {
-        req.user = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = jwt.verify(token, process.env.JWT_SECRET!);
         next();
     } catch {
         res.status(401).json({ error: "Invalid token" });

@@ -1,11 +1,119 @@
 import { Request, Response } from "express";
 import { AppDataSource } from "../../config/data-source";
 import { Match, MatchStatus } from "./match.entity";
+import { emitMatchUpdate } from "../../socket";
+
 import { GroupTeam } from "../tournaments/group-team.entity";
 import { MatchSource } from "./match-source.entity";
 import { MatchEvent, MatchEventType } from "./match-event.entity";
 
-const formatMatch = (m: Match) => ({ ...m, result: m.result });
+const formatMatch = (m: Match) => ({ 
+    ...m, 
+    result: m.result,
+    matchEvents: m.matchEvents || [],
+    matchSources: m.matchSources || []
+});
+
+/**
+ * Recalculates group standings from scratch for a given group by replaying
+ * all completed matches. This is idempotent — safe to call after any result update.
+ */
+async function recalculateGroupStandings(groupId: number): Promise<void> {
+    const matchRepo = AppDataSource.getRepository(Match);
+    const groupTeamRepo = AppDataSource.getRepository(GroupTeam);
+
+    // Reset all standings in this group to zero
+    const standings = await groupTeamRepo.find({
+        where: { group: { id: groupId } },
+        relations: ["team"]
+    });
+
+    for (const s of standings) {
+        s.played = 0; s.wins = 0; s.draws = 0; s.losses = 0;
+        s.goals_for = 0; s.goals_against = 0; s.goal_difference = 0; s.points = 0;
+    }
+
+    // Replay all completed matches in this group
+    const completedMatches = await matchRepo.find({
+        where: { group: { id: groupId }, status: MatchStatus.COMPLETED },
+        relations: ["homeTeam", "awayTeam"]
+    });
+
+    for (const m of completedMatches) {
+        const homeS = standings.find(s => s.team?.id === m.homeTeam?.id);
+        const awayS = standings.find(s => s.team?.id === m.awayTeam?.id);
+        if (!homeS || !awayS) continue;
+
+        const hs = m.homeScore ?? 0;
+        const as_ = m.awayScore ?? 0;
+
+        homeS.played++; awayS.played++;
+        homeS.goals_for += hs; homeS.goals_against += as_;
+        awayS.goals_for += as_; awayS.goals_against += hs;
+        homeS.goal_difference = homeS.goals_for - homeS.goals_against;
+        awayS.goal_difference = awayS.goals_for - awayS.goals_against;
+
+        if (hs > as_) {
+            homeS.wins++; awayS.losses++;
+            homeS.points += 3;
+        } else if (as_ > hs) {
+            awayS.wins++; homeS.losses++;
+            awayS.points += 3;
+        } else {
+            homeS.draws++; awayS.draws++;
+            homeS.points += 1; awayS.points += 1;
+        }
+    }
+
+    // Update positions after sorting
+    standings.sort((a, b) =>
+        b.points - a.points ||
+        b.goal_difference - a.goal_difference ||
+        b.goals_for - a.goals_for
+    );
+    standings.forEach((s, i) => { s.position = i + 1; });
+
+    await groupTeamRepo.save(standings);
+}
+
+/**
+ * Helper to finalize a match: recalculate standings and handle knockout progression.
+ */
+async function finishMatch(match: Match): Promise<void> {
+    const matchRepo = AppDataSource.getRepository(Match);
+    const matchSourceRepo = AppDataSource.getRepository(MatchSource);
+
+    // 1. Recalculate group standings if applicable
+    if (match.group && match.homeTeam && match.awayTeam) {
+        await recalculateGroupStandings(match.group.id);
+    }
+
+    // 2. Handle knockout progression if applicable
+    // We fetch relations again if they might be missing
+    const fullMatch = await matchRepo.findOne({
+        where: { id: match.id },
+        relations: ["group", "stage", "homeTeam", "awayTeam"]
+    });
+
+    if (fullMatch && fullMatch.stage && fullMatch.stage.stage_type === "knockout") {
+        const pendingSources = await matchSourceRepo.find({
+            where: { source_type: "match_winner", source_value: fullMatch.id.toString() },
+            relations: ["match"]
+        });
+
+        const winner = fullMatch.homeScore > fullMatch.awayScore ? fullMatch.homeTeam : fullMatch.awayTeam;
+        if (winner) {
+            for (const source of pendingSources) {
+                const targetMatch = await matchRepo.findOne({ where: { id: source.match.id } });
+                if (targetMatch) {
+                    if (source.side === "home") targetMatch.homeTeam = winner;
+                    if (source.side === "away") targetMatch.awayTeam = winner;
+                    await matchRepo.save(targetMatch);
+                }
+            }
+        }
+    }
+}
 
 export const MatchController = {
     async getAll(req: Request, res: Response) {
@@ -72,7 +180,7 @@ export const MatchController = {
             const matchRepo = AppDataSource.getRepository(Match);
             const match = await matchRepo.findOne({
                 where: { id: Number(id) },
-                relations: ["homeTeam", "awayTeam", "group", "stage", "tournament"]
+                relations: ["homeTeam", "awayTeam", "group", "stage", "tournament", "tournament.rules", "tournament.format", "matchEvents", "matchEvents.team"]
             });
             if (!match) return res.status(404).json({ success: false, message: "Match not found" });
             res.json({ success: true, data: formatMatch(match) });
@@ -87,76 +195,24 @@ export const MatchController = {
             const { homeScore, awayScore } = req.body;
 
             const matchRepo = AppDataSource.getRepository(Match);
-            const groupTeamRepo = AppDataSource.getRepository(GroupTeam);
             const matchSourceRepo = AppDataSource.getRepository(MatchSource);
 
             const match = await matchRepo.findOne({
                 where: { id },
-                relations: ["homeTeam", "awayTeam", "group", "stage", "tournament"]
+                relations: ["homeTeam", "awayTeam", "group", "stage", "tournament", "tournament.rules"]
             });
 
             if (!match) return res.status(404).json({ success: false, message: "Match not found" });
 
             match.homeScore = homeScore;
             match.awayScore = awayScore;
-            match.status = "completed" as any;
+            match.status = MatchStatus.COMPLETED;
             await matchRepo.save(match);
 
-            // If group match, update standings
-            if (match.group && match.homeTeam && match.awayTeam) {
-                const homeStanding = await groupTeamRepo.findOne({ where: { group: { id: match.group.id }, team: { id: match.homeTeam.id } } });
-                const awayStanding = await groupTeamRepo.findOne({ where: { group: { id: match.group.id }, team: { id: match.awayTeam.id } } });
+            // Idempotent: recalculate standings and propagate knockout winner
+            await finishMatch(match);
 
-                if (homeStanding && awayStanding) {
-                    // Remove logic for reversing old scores omitted for simplicity in this initial MVP
-                    homeStanding.played += 1;
-                    awayStanding.played += 1;
-                    homeStanding.goals_for += homeScore;
-                    homeStanding.goals_against += awayScore;
-                    homeStanding.goal_difference += (homeScore - awayScore);
-                    awayStanding.goals_for += awayScore;
-                    awayStanding.goals_against += homeScore;
-                    awayStanding.goal_difference += (awayScore - homeScore);
-
-                    if (homeScore > awayScore) {
-                        homeStanding.wins += 1;
-                        awayStanding.losses += 1;
-                        homeStanding.points += 3;
-                    } else if (awayScore > homeScore) {
-                        awayStanding.wins += 1;
-                        homeStanding.losses += 1;
-                        awayStanding.points += 3;
-                    } else {
-                        homeStanding.draws += 1;
-                        awayStanding.draws += 1;
-                        homeStanding.points += 1;
-                        awayStanding.points += 1;
-                    }
-
-                    await groupTeamRepo.save([homeStanding, awayStanding]);
-                }
-            }
-
-            // If knockout match, propagate winner
-            if (match.stage && match.stage.stage_type === "knockout") {
-                const pendingSources = await matchSourceRepo.find({
-                    where: { source_type: "match_winner", source_value: match.id.toString() },
-                    relations: ["match"]
-                });
-
-                const winner = homeScore > awayScore ? match.homeTeam : match.awayTeam;
-                if (winner) {
-                    for (const source of pendingSources) {
-                        const targetMatch = await matchRepo.findOne({ where: { id: source.match.id } });
-                        if (targetMatch) {
-                            if (source.side === "home") targetMatch.homeTeam = winner;
-                            if (source.side === "away") targetMatch.awayTeam = winner;
-                            await matchRepo.save(targetMatch);
-                        }
-                    }
-                }
-            }
-
+            emitMatchUpdate(id.toString(), formatMatch(match));
             res.json({ success: true, data: formatMatch(match) });
         } catch (error: any) {
             res.status(500).json({ success: false, message: error.message });
@@ -171,7 +227,7 @@ export const MatchController = {
             const matchRepo = AppDataSource.getRepository(Match);
             const match = await matchRepo.findOne({
                 where: { id: Number(id) },
-                relations: ["homeTeam", "awayTeam", "group", "stage", "tournament"]
+                relations: ["homeTeam", "awayTeam", "group", "stage", "tournament", "tournament.rules"]
             });
 
             if (!match) {
@@ -181,7 +237,20 @@ export const MatchController = {
             // Update only allowed generic properties
             if (updateData.startTime !== undefined) match.startTime = new Date(updateData.startTime);
             if (updateData.venue !== undefined) match.venue = updateData.venue;
-            if (updateData.status !== undefined) match.status = updateData.status;
+            if (updateData.status !== undefined) {
+                // If transitioning to live, set initial period and start time
+                if (updateData.status === MatchStatus.LIVE && match.status === MatchStatus.SCHEDULED) {
+                    match.match_period = "first_half" as any;
+                    match.live_minute = 0;
+                    match.periodStartedAt = new Date();
+                }
+                match.status = updateData.status;
+
+                // If transitioning to completed, trigger finish logic
+                if (updateData.status === MatchStatus.COMPLETED) {
+                    await finishMatch(match);
+                }
+            }
             if (updateData.matchReferees !== undefined) match.matchReferees = updateData.matchReferees;
             if (updateData.breakDuration !== undefined) match.breakDuration = updateData.breakDuration;
 
@@ -193,6 +262,7 @@ export const MatchController = {
             await matchRepo.save(match);
 
             res.status(200).json({ success: true, data: formatMatch(match), message: "Match updated successfully" });
+            emitMatchUpdate(id.toString(), formatMatch(match));
         } catch (error: any) {
             console.error("Error updating match:", error);
             res.status(500).json({ success: false, message: "Internal server error" });
@@ -208,7 +278,7 @@ export const MatchController = {
             const matchRepo = AppDataSource.getRepository(Match);
             const match = await matchRepo.findOne({ 
                 where: { id: Number(id) },
-                relations: ["homeTeam", "awayTeam", "group", "stage", "tournament"]
+                relations: ["homeTeam", "awayTeam", "group", "stage", "tournament", "tournament.rules"]
             });
 
             if (!match) return res.status(404).json({ success: false, message: "Match not found" });
@@ -387,12 +457,70 @@ export const MatchController = {
         try {
             const { id } = req.params;
             const matchRepo = AppDataSource.getRepository(Match);
+            const eventRepo = AppDataSource.getRepository(MatchEvent);
+
             const match = await matchRepo.findOne({
                 where: { id: Number(id) },
-                select: ["id", "stats"]
+                relations: ["homeTeam", "awayTeam"]
             });
             if (!match) return res.status(404).json({ success: false, message: "Match not found" });
-            res.json({ success: true, data: match.stats || {} });
+
+            const events = await eventRepo.find({
+                where: { match: { id: Number(id) } },
+                relations: ["team"]
+            });
+
+            // Aggregate stats by team side from events
+            const stats: Record<string, { home: number; away: number }> = {
+                goals:        { home: 0, away: 0 },
+                yellowCards:  { home: 0, away: 0 },
+                redCards:     { home: 0, away: 0 },
+                corners:      { home: 0, away: 0 },
+                offsides:     { home: 0, away: 0 },
+                fouls:        { home: 0, away: 0 },
+                freeKicks:    { home: 0, away: 0 },
+                substitutions:{ home: 0, away: 0 },
+                penalties:    { home: 0, away: 0 },
+            };
+
+            for (const ev of events) {
+                // Determine side: prefer teamSide field, fallback to team FK match
+                let side: "home" | "away" | null = null;
+                if (ev.teamSide === "home") side = "home";
+                else if (ev.teamSide === "away") side = "away";
+                else if (ev.team) {
+                    if (match.homeTeam && ev.team.id === match.homeTeam.id) side = "home";
+                    else if (match.awayTeam && ev.team.id === match.awayTeam.id) side = "away";
+                }
+                if (!side) continue;
+
+                switch (ev.type) {
+                    case MatchEventType.GOAL:     stats.goals[side]++;        break;
+                    case MatchEventType.OWN_GOAL: {
+                        // own goal credits the opposite side
+                        const oppSide = side === "home" ? "away" : "home";
+                        stats.goals[oppSide]++;
+                        break;
+                    }
+                    case MatchEventType.YELLOW_CARD: stats.yellowCards[side]++; break;
+                    case MatchEventType.RED_CARD:    stats.redCards[side]++;    break;
+                    case MatchEventType.CORNER:      stats.corners[side]++;     break;
+                    case MatchEventType.OFFSIDE:     stats.offsides[side]++;    break;
+                    case MatchEventType.FOUL:        stats.fouls[side]++;       break;
+                    case MatchEventType.FREE_KICK:   stats.freeKicks[side]++;   break;
+                    case MatchEventType.SUBSTITUTION: stats.substitutions[side]++; break;
+                    case MatchEventType.PENALTY:     stats.penalties[side]++;   break;
+                }
+            }
+
+            res.json({
+                success: true,
+                data: {
+                    homeTeam: match.homeTeam?.name ?? "Home",
+                    awayTeam: match.awayTeam?.name ?? "Away",
+                    stats
+                }
+            });
         } catch (error: any) {
             res.status(500).json({ success: false, message: error.message });
         }
@@ -408,24 +536,31 @@ export const MatchController = {
             if (!match) return res.status(404).json({ success: false, message: "Match not found" });
 
             const eventRepo = AppDataSource.getRepository(MatchEvent);
+            
+            // Map frontend fields (team, teamId) to entity fields (teamSide, team relation)
+            const { team, teamId, ...otherData } = eventData;
+            
             const newEvent = eventRepo.create({
-                ...eventData,
+                ...otherData,
+                teamSide: team as any, // 'home' or 'away'
+                team: teamId ? { id: Number(teamId) } as any : undefined,
                 match: { id: match.id } as any
-            }) as unknown as MatchEvent;
-
+            }) as any;
+            
             const savedEvent = await eventRepo.save(newEvent);
 
-            // If it's a goal, optionally update the score directly
-            if (savedEvent.type === MatchEventType.GOAL && savedEvent.team) {
-                if (match.homeTeam && savedEvent.team.id === match.homeTeam.id) {
+            // If it's a goal, update the score
+            if (savedEvent.type === MatchEventType.GOAL) {
+                if (team === 'home') {
                     match.homeScore += 1;
-                } else if (match.awayTeam && savedEvent.team.id === match.awayTeam.id) {
+                } else if (team === 'away') {
                     match.awayScore += 1;
                 }
                 await matchRepo.save(match);
             }
 
             res.status(201).json({ success: true, data: savedEvent });
+            emitMatchUpdate(id.toString(), { event: savedEvent, type: 'event_added' });
         } catch (error: any) {
             res.status(500).json({ success: false, message: error.message });
         }
@@ -440,10 +575,12 @@ export const MatchController = {
             const event = await eventRepo.findOne({ where: { id: Number(eventId) } });
             if (!event) return res.status(404).json({ success: false, message: "Event not found" });
 
-            // Note: If updating a goal to a non-goal or changing the team, 
-            // the match score would need complex recalculation. 
-            // For now, we update simple fields.
-            Object.assign(event, updateData);
+            const { team, teamId, ...otherData } = updateData;
+            
+            if (team) event.teamSide = team as any;
+            if (teamId) event.team = { id: Number(teamId) } as any;
+            
+            Object.assign(event, otherData);
             await eventRepo.save(event);
 
             res.json({ success: true, data: event });
@@ -470,10 +607,13 @@ export const MatchController = {
             });
 
             // If it was a goal, decrement the score
-            if (match && event.type === MatchEventType.GOAL && event.team) {
-                if (match.homeTeam && event.team.id === match.homeTeam.id) {
+            if (match && event.type === MatchEventType.GOAL) {
+                const isHomeGoal = (event.team && match.homeTeam && event.team.id === match.homeTeam.id) || (event.teamSide === 'home');
+                const isAwayGoal = (event.team && match.awayTeam && event.team.id === match.awayTeam.id) || (event.teamSide === 'away');
+
+                if (isHomeGoal) {
                     match.homeScore = Math.max(0, match.homeScore - 1);
-                } else if (match.awayTeam && event.team.id === match.awayTeam.id) {
+                } else if (isAwayGoal) {
                     match.awayScore = Math.max(0, match.awayScore - 1);
                 }
                 await matchRepo.save(match);
@@ -481,6 +621,7 @@ export const MatchController = {
 
             await eventRepo.remove(event);
             res.json({ success: true, message: "Event deleted successfully" });
+            emitMatchUpdate(id.toString(), { type: 'event_deleted', eventId });
         } catch (error: any) {
             res.status(500).json({ success: false, message: error.message });
         }
@@ -490,18 +631,45 @@ export const MatchController = {
         try {
             const { id } = req.params;
             const matchRepo = AppDataSource.getRepository(Match);
+            const matchSourceRepo = AppDataSource.getRepository(MatchSource);
 
             const match = await matchRepo.findOne({ 
                 where: { id: Number(id) },
-                relations: ["homeTeam", "awayTeam", "group", "stage", "tournament"]
+                relations: ["homeTeam", "awayTeam", "group", "stage", "tournament", "tournament.rules"]
             });
             if (!match) return res.status(404).json({ success: false, message: "Match not found" });
 
             match.status = MatchStatus.COMPLETED;
             await matchRepo.save(match);
 
-            // Could also trigger updateResult logic here, simplified for now
+            // Recalculate group standings from scratch after ending the match
+            if (match.group && match.homeTeam && match.awayTeam) {
+                await recalculateGroupStandings(match.group.id);
+            }
+
+            // Propagate winner to knockout next round
+            if (match.stage && match.stage.stage_type === "knockout") {
+                const homeScore = match.homeScore ?? 0;
+                const awayScore = match.awayScore ?? 0;
+                const pendingSources = await matchSourceRepo.find({
+                    where: { source_type: "match_winner", source_value: match.id.toString() },
+                    relations: ["match"]
+                });
+                const winner = homeScore > awayScore ? match.homeTeam : match.awayTeam;
+                if (winner) {
+                    for (const source of pendingSources) {
+                        const targetMatch = await matchRepo.findOne({ where: { id: source.match.id } });
+                        if (targetMatch) {
+                            if (source.side === "home") targetMatch.homeTeam = winner;
+                            if (source.side === "away") targetMatch.awayTeam = winner;
+                            await matchRepo.save(targetMatch);
+                        }
+                    }
+                }
+            }
+
             res.json({ success: true, data: formatMatch(match), message: "Match ended successfully" });
+            emitMatchUpdate(id.toString(), formatMatch(match));
         } catch (error: any) {
             res.status(500).json({ success: false, message: error.message });
         }
@@ -515,7 +683,7 @@ export const MatchController = {
             const matchRepo = AppDataSource.getRepository(Match);
             const match = await matchRepo.findOne({ 
                 where: { id: Number(id) },
-                relations: ["homeTeam", "awayTeam", "group", "stage", "tournament"]
+                relations: ["homeTeam", "awayTeam", "group", "stage", "tournament", "tournament.rules"]
             });
 
             if (!match) {
@@ -529,11 +697,17 @@ export const MatchController = {
             if (homeScore !== undefined) match.homeScore = Number(homeScore);
             if (awayScore !== undefined) match.awayScore = Number(awayScore);
             if (live_minute !== undefined) match.live_minute = Number(live_minute);
-            if (match_period !== undefined) match.match_period = match_period;
+            if (match_period !== undefined) {
+                match.match_period = match_period;
+                match.periodStartedAt = new Date();
+            }
 
             await matchRepo.save(match);
 
-            return res.json({ success: true, data: formatMatch(match) });
+            if (match) {
+                emitMatchUpdate(id.toString(), formatMatch(match));
+            }
+            return res.json({ success: true, data: match ? formatMatch(match) : null });
         } catch (error: any) {
             return res.status(500).json({ success: false, message: error.message });
         }

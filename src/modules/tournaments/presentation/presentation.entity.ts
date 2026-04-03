@@ -25,6 +25,12 @@ export class TournamentPresentation {
     @Column({ name: "live_broadcast_enabled", type: "boolean", default: false })
     liveBroadcastEnabled!: boolean;
 
+    @Column({ name: "show_recent_results", type: "boolean", default: true })
+    showRecentResults!: boolean;
+
+    @Column({ name: "live_stream_link", type: "varchar", length: 255, nullable: true })
+    liveStreamLink?: string;
+
     @CreateDateColumn({ name: "created_at" })
     createdAt!: Date;
 

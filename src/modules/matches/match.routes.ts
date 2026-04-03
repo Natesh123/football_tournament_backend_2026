@@ -83,6 +83,7 @@ router.get("/:id/h2h", MatchController.getMatchH2H);
 router.post("/:id/result", MatchController.updateResult);
 router.patch("/:id/schedule", MatchController.updateSchedule);
 router.patch("/:id/live", MatchController.updateLiveState);
+router.get("/:id/stats", validateMatchIdParam, MatchController.getMatchStats);
 
 // ── GET /:id — match with full events (service-backed) ──────────────────────────
 router.get("/:id", validateMatchIdParam, MatchEventController.getMatchWithEvents);

@@ -6,15 +6,7 @@ export class ResultsService {
     private tournamentRepo = AppDataSource.getRepository(Tournament);
     private groupRepo = AppDataSource.getRepository(Group);
 
-    async toggleAutoPublish(tournamentId: number, autoPublish: boolean): Promise<Tournament> {
-        const tournament = await this.tournamentRepo.findOneBy({ id: tournamentId });
-        if (!tournament) {
-            throw new Error("Tournament not found");
-        }
 
-        tournament.autoPublishResults = autoPublish;
-        return await this.tournamentRepo.save(tournament);
-    }
 
     async getStandings(tournamentId: number): Promise<any[]> {
         const groups = await this.groupRepo.find({

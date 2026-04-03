@@ -8,14 +8,12 @@ import { ExtraTimeRule, GoalkeeperRule, TournamentRules } from "./tournament-rul
 import { VenueService } from "./venues/venue.service";
 import { FinanceService } from "./finance/finance.service";
 import { PresentationService } from "./presentation/presentation.service";
-import { ResultsService } from "./results/results.service";
 import { FieldType } from "./venues/venue.entity";
 import { AcceptedPaymentMethod } from "./finance/finance.entity";
 
 const venueService = new VenueService();
 const financeService = new FinanceService();
 const presentationService = new PresentationService();
-const resultsService = new ResultsService();
 
 // Helper to map frontend rules directly to the DTO
 function mapRulesToDto(reqRules: any) {
@@ -160,7 +158,9 @@ function mapPresentationToDto(presentation: any) {
         welcomeMessage: presentation.welcomeMsg || "",
         showStandingsWidget: Boolean(presentation.showStandings),
         showTopScorers: Boolean(presentation.showTopScorers),
-        liveBroadcastEnabled: Boolean(presentation.showLiveScores)
+        liveBroadcastEnabled: Boolean(presentation.showLiveScores),
+        showRecentResults: Boolean(presentation.showRecentResults),
+        liveStreamLink: presentation.liveStreamLink || ""
     };
 }
 
@@ -179,8 +179,9 @@ function mapDtoToPresentation(dto: any) {
         showTopScorers: Boolean(dto.showTopScorers),
         welcomeMsg: dto.welcomeMessage || "",
         showLiveScores: Boolean(dto.liveBroadcastEnabled),
+        showRecentResults: Boolean(dto.showRecentResults),
         showCommentary: false,
-        liveStreamLink: ""
+        liveStreamLink: dto.liveStreamLink || ""
     };
 }
 
@@ -190,11 +191,25 @@ const tournamentTeamRepo = AppDataSource.getRepository(TournamentTeam);
 const teamRepo = AppDataSource.getRepository(Team);
 
 export const TournamentService = {
-    async findAll(): Promise<any[]> {
-        const tournaments = await tournamentRepo.find({
-            order: { createdAt: "DESC" },
-            relations: ["organizer", "format", "rules"]
-        });
+    async findAll(user?: any): Promise<any[]> {
+        const query = tournamentRepo.createQueryBuilder("tournament")
+            .leftJoinAndSelect("tournament.organizer", "organizer")
+            .leftJoinAndSelect("tournament.format", "format")
+            .leftJoinAndSelect("tournament.rules", "rules")
+            .orderBy("tournament.createdAt", "DESC");
+
+        if (user) {
+            const userRole = user.role?.toLowerCase() || '';
+            if (userRole === 'admin') {
+                // Admins see all tournaments
+            } else if (userRole === 'organizer') {
+                query.andWhere("tournament.ownerId = :userId", { userId: user.id });
+            } else {
+                query.andWhere("tournament.visibility = :visibility", { visibility: 'public' });
+            }
+        }
+
+        const tournaments = await query.getMany();
         
         return Promise.all(tournaments.map(async t => {
             const result: any = { ...t };
@@ -204,7 +219,7 @@ export const TournamentService = {
                 delete result.rules;
             }
 
-            result.settings.results = { autoPublish: Boolean(t.autoPublishResults) };
+
 
             const venueDto = await venueService.getVenue(t.id);
             if (venueDto) result.settings.venues = mapDtoToVenues(venueDto);
@@ -233,7 +248,7 @@ export const TournamentService = {
             delete result.rules;
         }
 
-        result.settings.results = { autoPublish: Boolean(t.autoPublishResults) };
+
 
         const venueDto = await venueService.getVenue(t.id);
         if (venueDto) result.settings.venues = mapDtoToVenues(venueDto);
@@ -249,6 +264,7 @@ export const TournamentService = {
 
     async create(data: Partial<Tournament>): Promise<Tournament> {
         const tournament = tournamentRepo.create({
+            ownerId: data.ownerId,
             name: data.name,
             description: data.description || "",
             startDate: data.startDate,
@@ -303,9 +319,7 @@ export const TournamentService = {
                 const dto = mapPresentationToDto(settings.presentation);
                 await presentationService.upsertPresentation(saved.id, dto);
             }
-            if (settings.results?.autoPublish !== undefined) {
-                await resultsService.toggleAutoPublish(saved.id, Boolean(settings.results.autoPublish));
-            }
+
         }
 
         return saved;
@@ -357,7 +371,31 @@ export const TournamentService = {
         }
 
         if (data.format) {
-            tournament.format = { ...tournament.format, ...data.format } as any;
+            const formatData = data.format as any;
+            if (!tournament.format) {
+                // Should not happen if relation is correctly set up, but safe fallback
+                tournament.format = {
+                    format_type: formatData.type || formatData.format_type || 'group',
+                    format_data: formatData.format_data,
+                    home_away_enabled: formatData.homeAway ?? formatData.home_away_enabled ?? false,
+                    win_points: formatData.winPoints ?? formatData.win_points ?? 3,
+                    draw_points: formatData.drawPoints ?? formatData.draw_points ?? 1,
+                    loss_points: formatData.lossPoints ?? formatData.loss_points ?? 0
+                } as any;
+            } else {
+                // Explicitly update fields to handle naming mismatch
+                if (formatData.type !== undefined) tournament.format.format_type = formatData.type;
+                else if (formatData.format_type !== undefined) tournament.format.format_type = formatData.format_type;
+
+                if (formatData.format_data !== undefined) tournament.format.format_data = formatData.format_data;
+                
+                if (formatData.homeAway !== undefined) tournament.format.home_away_enabled = formatData.homeAway;
+                else if (formatData.home_away_enabled !== undefined) tournament.format.home_away_enabled = formatData.home_away_enabled;
+
+                if (formatData.winPoints !== undefined) tournament.format.win_points = formatData.winPoints;
+                if (formatData.drawPoints !== undefined) tournament.format.draw_points = formatData.drawPoints;
+                if (formatData.lossPoints !== undefined) tournament.format.loss_points = formatData.lossPoints;
+            }
         }
 
         const saved = await tournamentRepo.save(tournament);
@@ -380,9 +418,7 @@ export const TournamentService = {
                 const dto = mapPresentationToDto(settings.presentation);
                 await presentationService.upsertPresentation(saved.id, dto);
             }
-            if (settings.results?.autoPublish !== undefined) {
-                await resultsService.toggleAutoPublish(saved.id, Boolean(settings.results.autoPublish));
-            }
+
         }
 
         return saved;
