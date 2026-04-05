@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import { AppDataSource } from "../../config/data-source";
 import { User } from "../../entities/user.entity";
 import { UserOtp } from "../../entities/otp.entity";
+import { PendingUser } from "../../entities/pending_user.entity";
 import { generateOTP } from "../../utils/otp.util";
 import { generateToken, verifyToken } from "../../utils/jwt.util";
 import { sendOTP } from "../../utils/email.util";
@@ -10,27 +11,36 @@ import { Permission } from "../../entities/permission.entity";
 
 export async function registerUser(email: string, password: string, user_name: string, phone_number: string) {
     const userRepo = AppDataSource.getRepository(User);
-    const otpRepo = AppDataSource.getRepository(UserOtp);
+    const pendingRepo = AppDataSource.getRepository(PendingUser);
 
     const existingEmail = await userRepo.findOne({ where: { email } });
-    if (existingEmail) throw new Error("User already exists (email)");
+    if (existingEmail) throw new Error("User already exists with this email");
 
     const existingUserName = await userRepo.findOne({ where: { user_name } });
-    if (existingUserName) throw new Error("User already exists (user_name)");
+    if (existingUserName) throw new Error("User already exists with this username");
 
     const hashed = await bcrypt.hash(password, 10);
-
-    // @ts-ignore
-    const user = userRepo.create({ email, password: hashed, user_name, phone_number, state: 1 });
-    await userRepo.save(user);
-
     const otp = generateOTP();
 
-    await otpRepo.save({
-        user_id: user.id,
-        otp,
-        expires_at: new Date(Date.now() + 5 * 60000)
-    });
+    // Save or update pending registration
+    let pendingUser = await pendingRepo.findOne({ where: { email } });
+    if (pendingUser) {
+        pendingUser.user_name = user_name;
+        pendingUser.password = hashed;
+        pendingUser.phone_number = phone_number;
+        pendingUser.otp = otp;
+        pendingUser.expires_at = new Date(Date.now() + 5 * 60000);
+    } else {
+        pendingUser = pendingRepo.create({
+            email,
+            user_name,
+            password: hashed,
+            phone_number,
+            otp,
+            expires_at: new Date(Date.now() + 5 * 60000)
+        });
+    }
+    await pendingRepo.save(pendingUser);
 
     // Send OTP via email
     await sendOTP(email, otp, "registration");
@@ -40,25 +50,28 @@ export async function registerUser(email: string, password: string, user_name: s
 
 export async function verifyOtp(email: string, otp: string) {
     const userRepo = AppDataSource.getRepository(User);
-    const otpRepo = AppDataSource.getRepository(UserOtp);
+    const pendingRepo = AppDataSource.getRepository(PendingUser);
 
-    const user = await userRepo.findOne({ where: { email } });
-    if (!user) throw new Error("User not found");
+    const pendingUser = await pendingRepo.findOne({ where: { email } });
+    if (!pendingUser) throw new Error("Registration session not found or expired");
 
-    const otpRow = await otpRepo.findOne({
-        where: {
-            user_id: user.id,
-            otp,
-            is_used: false
-        }
+    if (pendingUser.otp !== otp) throw new Error("Invalid OTP");
+    if (new Date() > pendingUser.expires_at) throw new Error("OTP expired");
+
+    // Create the actual user
+    // @ts-ignore
+    const user = userRepo.create({
+        email: pendingUser.email,
+        password: pendingUser.password,
+        user_name: pendingUser.user_name,
+        phone_number: pendingUser.phone_number,
+        state: 1,
+        is_verified: true
     });
-
-    if (!otpRow) throw new Error("Invalid OTP");
-    if (new Date() > otpRow.expires_at) throw new Error("OTP expired");
-
-    // mark verified
-    user.is_verified = true;
     await userRepo.save(user);
+
+    // Delete pending registration
+    await pendingRepo.delete({ email });
 
     const permRepo = AppDataSource.getRepository(Permission);
     const permissions = await permRepo.findOne({ where: { roleId: user.roleId || 0 } });
@@ -68,17 +81,19 @@ export async function verifyOtp(email: string, otp: string) {
         email: user.email,
         user_name: user.user_name,
         role: user.userRole?.name || 'user',
+        roleId: user.roleId,
         permissions
     });
 
     return {
-        message: "OTP verified",
+        message: "OTP verified, registration complete",
         token,
         user: {
             id: user.id,
             email: user.email,
             user_name: user.user_name,
             role: user.userRole?.name || 'user',
+            roleId: user.roleId,
             permissions
         }
     };
@@ -113,6 +128,7 @@ export async function loginUser(email: string, password: string) {
         email: user.email,
         user_name: user.user_name,
         role: user.userRole?.name || 'user',
+        roleId: user.roleId,
         permissions
     });
 
@@ -150,6 +166,7 @@ export async function validateTokenService(token: string) {
                 email: user.email,
                 user_name: user.user_name,
                 role: user.userRole?.name || 'user',
+                roleId: user.roleId,
                 permissions
             }
         };
@@ -159,25 +176,28 @@ export async function validateTokenService(token: string) {
 }
 
 export async function resendOtpService(email: string) {
+    const pendingRepo = AppDataSource.getRepository(PendingUser);
     const userRepo = AppDataSource.getRepository(User);
-    const otpRepo = AppDataSource.getRepository(UserOtp);
 
+    // Check if user is already registered and verified
     const user = await userRepo.findOne({ where: { email } });
-    if (!user) throw new Error("User not found");
+    if (user && user.is_verified) {
+        throw new Error("User is already registered and verified. Please login.");
+    }
+
+    const pendingUser = await pendingRepo.findOne({ where: { email } });
+    if (!pendingUser) throw new Error("Registration session not found. Please register again.");
 
     // Generate new OTP
     const otp = generateOTP();
 
-    // Save new OTP
-    await otpRepo.save({
-        user_id: user.id,
-        otp,
-        expires_at: new Date(Date.now() + 5 * 60000)
-    });
+    // Update OTP
+    pendingUser.otp = otp;
+    pendingUser.expires_at = new Date(Date.now() + 5 * 60000);
+    await pendingRepo.save(pendingUser);
 
     // Send OTP via email
-    const otpType = user.is_verified ? "login" : "registration";
-    await sendOTP(email, otp, otpType);
+    await sendOTP(email, otp, "registration");
 
     return { message: "OTP resent successfully" };
 }

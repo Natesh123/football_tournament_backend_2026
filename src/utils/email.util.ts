@@ -1,15 +1,32 @@
 // @ts-ignore
 import nodemailer from "nodemailer";
+import * as dotenv from "dotenv";
 
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
-    port: parseInt(process.env.SMTP_PORT || "587"),
-    secure: false, // true for 465, false for other ports
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-    },
-});
+dotenv.config();
+
+const getTransporter = () => {
+    const config: any = {
+        host: process.env.SMTP_HOST || "smtp.gmail.com",
+        port: parseInt(process.env.SMTP_PORT || "587"),
+        secure: process.env.SMTP_SECURE === "true", // true for 465, false for 587
+        auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+        },
+    };
+
+    // Optimization for Gmail
+    if (config.host.includes("gmail.com")) {
+        return nodemailer.createTransport({
+            service: "gmail",
+            auth: config.auth,
+        });
+    }
+
+    return nodemailer.createTransport(config);
+};
+
+let transporter = getTransporter();
 
 export async function sendOTP(email: string, otp: string, type: "registration" | "login") {
     const subject = type === "registration"

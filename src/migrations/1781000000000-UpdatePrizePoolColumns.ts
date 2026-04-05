@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class UpdatePrizePoolColumns1743000000000 implements MigrationInterface {
-    name = 'UpdatePrizePoolColumns1743000000000'
+export class UpdatePrizePoolColumns1781000000000 implements MigrationInterface {
+    name = 'UpdatePrizePoolColumns1781000000000'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`ALTER TABLE \`tournament_prize_pool\` CHANGE \`first_place_percent\` \`first_place_amount\` decimal(10,2) NOT NULL DEFAULT '0'`);
