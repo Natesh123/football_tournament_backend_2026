@@ -1,0 +1,125 @@
+import { MigrationInterface, QueryRunner } from "typeorm";
+
+export class CreateTournamentFormats1772647861333 implements MigrationInterface {
+    name = 'CreateTournamentFormats1772647861333'
+
+    public async up(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`DROP INDEX \`FK_368e146b785b574f42ae9e53d5e\` ON \`users\``);
+        await queryRunner.query(`DROP INDEX \`FK_74da8f612921485e1005dc8e225\` ON \`team_member\``);
+        await queryRunner.query(`DROP INDEX \`FK_a57753f0e48a8681c0b2163ed12\` ON \`tournament_team\``);
+        await queryRunner.query(`DROP INDEX \`FK_e7ea12e2d49a7f5e6e1481429a1\` ON \`tournament_team\``);
+        await queryRunner.query(`CREATE TABLE \`tournament_tiebreakers\` (\`id\` bigint NOT NULL AUTO_INCREMENT, \`rule_key\` varchar(50) NOT NULL, \`priority_order\` int NOT NULL, \`created_at\` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6), \`updated_at\` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6), \`tournament_format_id\` bigint NULL, PRIMARY KEY (\`id\`)) ENGINE=InnoDB`);
+        await queryRunner.query(`CREATE TABLE \`format_group_settings\` (\`id\` bigint NOT NULL AUTO_INCREMENT, \`groups_count\` int NOT NULL, \`teams_per_group\` int NOT NULL, \`total_teams\` int NOT NULL, \`home_away_enabled\` tinyint NOT NULL DEFAULT 0, \`created_at\` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6), \`updated_at\` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6), \`format_id\` bigint NULL, PRIMARY KEY (\`id\`)) ENGINE=InnoDB`);
+        await queryRunner.query(`CREATE TABLE \`format_knockout_settings\` (\`id\` bigint NOT NULL AUTO_INCREMENT, \`qualified_teams\` int NOT NULL, \`seeding_type\` enum ('group_rank', 'random', 'manual') NOT NULL DEFAULT 'group_rank', \`third_place_match\` tinyint NOT NULL DEFAULT 0, \`created_at\` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6), \`updated_at\` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6), \`format_id\` bigint NULL, PRIMARY KEY (\`id\`)) ENGINE=InnoDB`);
+        await queryRunner.query(`CREATE TABLE \`format_stages\` (\`id\` bigint NOT NULL AUTO_INCREMENT, \`stage_order\` int NOT NULL, \`stage_type\` enum ('group', 'knockout') NOT NULL, \`stage_name\` varchar(255) NOT NULL, \`teams_count\` int NOT NULL, \`created_at\` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6), \`format_id\` bigint NULL, PRIMARY KEY (\`id\`)) ENGINE=InnoDB`);
+        await queryRunner.query(`CREATE TABLE \`tournament_formats\` (\`id\` bigint NOT NULL AUTO_INCREMENT, \`format_type\` varchar(30) NOT NULL, \`home_away_enabled\` tinyint NOT NULL DEFAULT 0, \`win_points\` int NOT NULL DEFAULT '3', \`draw_points\` int NOT NULL DEFAULT '1', \`loss_points\` int NOT NULL DEFAULT '0', \`created_at\` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6), \`updated_at\` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6), \`tournament_id\` varchar(36) NULL, UNIQUE INDEX \`REL_3dd7c6e89c59e847a559aa620b\` (\`tournament_id\`), PRIMARY KEY (\`id\`)) ENGINE=InnoDB`);
+        await queryRunner.query(`ALTER TABLE \`users\` CHANGE \`roleId\` \`roleId\` int NULL`);
+        await queryRunner.query(`ALTER TABLE \`permissions\` DROP COLUMN \`module_access\``);
+        await queryRunner.query(`ALTER TABLE \`permissions\` ADD \`module_access\` json NULL`);
+        await queryRunner.query(`ALTER TABLE \`organizer\` CHANGE \`name\` \`name\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`organizer\` CHANGE \`email\` \`email\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`organizer\` CHANGE \`phone\` \`phone\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`organizer\` CHANGE \`website\` \`website\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`organizer\` CHANGE \`tournamentId\` \`tournamentId\` varchar(36) NULL`);
+        await queryRunner.query(`ALTER TABLE \`team_member\` CHANGE \`position\` \`position\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`team_member\` CHANGE \`jerseyNumber\` \`jerseyNumber\` int NULL`);
+        await queryRunner.query(`ALTER TABLE \`team_member\` CHANGE \`teamId\` \`teamId\` varchar(36) NULL`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`shortName\` \`shortName\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`logoUrl\` \`logoUrl\` longtext NULL`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`teamType\` \`teamType\` enum ('Club', 'School', 'College', 'Corporate', 'Academy') NULL`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`city\` \`city\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`state\` \`state\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`country\` \`country\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`foundedYear\` \`foundedYear\` int NULL`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`homeGround\` \`homeGround\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`description\` \`description\` text NULL`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`captainName\` \`captainName\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`contactEmail\` \`contactEmail\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`tournament_team\` CHANGE \`tournamentId\` \`tournamentId\` varchar(36) NULL`);
+        await queryRunner.query(`ALTER TABLE \`tournament_team\` CHANGE \`teamId\` \`teamId\` varchar(36) NULL`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`description\` \`description\` text NULL`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`participantType\` \`participantType\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`minTeams\` \`minTeams\` int NULL`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`regOpenDate\` \`regOpenDate\` datetime NULL`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`regCloseDate\` \`regCloseDate\` datetime NULL`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`playerLimit\` \`playerLimit\` int NULL`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`squadSize\` \`squadSize\` int NULL`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`shortName\` \`shortName\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`type\` \`type\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`visibility\` \`visibility\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`logo\` \`logo\` longtext NULL`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`coverImage\` \`coverImage\` longtext NULL`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`sponsors\` \`sponsors\` varchar(255) NULL`);
+        await queryRunner.query(`ALTER TABLE \`users\` ADD CONSTRAINT \`FK_368e146b785b574f42ae9e53d5e\` FOREIGN KEY (\`roleId\`) REFERENCES \`user_role\`(\`id\`) ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE \`organizer\` ADD CONSTRAINT \`FK_95b76af812bcd51f0e180126ed1\` FOREIGN KEY (\`tournamentId\`) REFERENCES \`tournament\`(\`id\`) ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE \`team_member\` ADD CONSTRAINT \`FK_74da8f612921485e1005dc8e225\` FOREIGN KEY (\`teamId\`) REFERENCES \`team\`(\`id\`) ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE \`tournament_team\` ADD CONSTRAINT \`FK_a57753f0e48a8681c0b2163ed12\` FOREIGN KEY (\`tournamentId\`) REFERENCES \`tournament\`(\`id\`) ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE \`tournament_team\` ADD CONSTRAINT \`FK_e7ea12e2d49a7f5e6e1481429a1\` FOREIGN KEY (\`teamId\`) REFERENCES \`team\`(\`id\`) ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE \`tournament_tiebreakers\` ADD CONSTRAINT \`FK_e98f04e20fe72b54149b835e1a3\` FOREIGN KEY (\`tournament_format_id\`) REFERENCES \`tournament_formats\`(\`id\`) ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE \`format_group_settings\` ADD CONSTRAINT \`FK_2430af46e79fe7b31db940e423d\` FOREIGN KEY (\`format_id\`) REFERENCES \`tournament_formats\`(\`id\`) ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE \`format_knockout_settings\` ADD CONSTRAINT \`FK_db7dce2ec50f4128929f6e8defc\` FOREIGN KEY (\`format_id\`) REFERENCES \`tournament_formats\`(\`id\`) ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE \`format_stages\` ADD CONSTRAINT \`FK_e1b6cacec2f7bc359e1a2ff9c2d\` FOREIGN KEY (\`format_id\`) REFERENCES \`tournament_formats\`(\`id\`) ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE \`tournament_formats\` ADD CONSTRAINT \`FK_3dd7c6e89c59e847a559aa620bc\` FOREIGN KEY (\`tournament_id\`) REFERENCES \`tournament\`(\`id\`) ON DELETE CASCADE ON UPDATE NO ACTION`);
+    }
+
+    public async down(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`ALTER TABLE \`tournament_formats\` DROP FOREIGN KEY \`FK_3dd7c6e89c59e847a559aa620bc\``);
+        await queryRunner.query(`ALTER TABLE \`format_stages\` DROP FOREIGN KEY \`FK_e1b6cacec2f7bc359e1a2ff9c2d\``);
+        await queryRunner.query(`ALTER TABLE \`format_knockout_settings\` DROP FOREIGN KEY \`FK_db7dce2ec50f4128929f6e8defc\``);
+        await queryRunner.query(`ALTER TABLE \`format_group_settings\` DROP FOREIGN KEY \`FK_2430af46e79fe7b31db940e423d\``);
+        await queryRunner.query(`ALTER TABLE \`tournament_tiebreakers\` DROP FOREIGN KEY \`FK_e98f04e20fe72b54149b835e1a3\``);
+        await queryRunner.query(`ALTER TABLE \`tournament_team\` DROP FOREIGN KEY \`FK_e7ea12e2d49a7f5e6e1481429a1\``);
+        await queryRunner.query(`ALTER TABLE \`tournament_team\` DROP FOREIGN KEY \`FK_a57753f0e48a8681c0b2163ed12\``);
+        await queryRunner.query(`ALTER TABLE \`team_member\` DROP FOREIGN KEY \`FK_74da8f612921485e1005dc8e225\``);
+        await queryRunner.query(`ALTER TABLE \`organizer\` DROP FOREIGN KEY \`FK_95b76af812bcd51f0e180126ed1\``);
+        await queryRunner.query(`ALTER TABLE \`users\` DROP FOREIGN KEY \`FK_368e146b785b574f42ae9e53d5e\``);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`sponsors\` \`sponsors\` varchar(255) NULL DEFAULT ''NULL''`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`coverImage\` \`coverImage\` longtext NULL DEFAULT ''NULL''`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`logo\` \`logo\` longtext NULL DEFAULT ''NULL''`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`visibility\` \`visibility\` varchar(255) NULL DEFAULT ''NULL''`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`type\` \`type\` varchar(255) NULL DEFAULT ''NULL''`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`shortName\` \`shortName\` varchar(255) NULL DEFAULT ''NULL''`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`squadSize\` \`squadSize\` int NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`playerLimit\` \`playerLimit\` int NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`regCloseDate\` \`regCloseDate\` datetime NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`regOpenDate\` \`regOpenDate\` datetime NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`minTeams\` \`minTeams\` int NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`participantType\` \`participantType\` varchar(255) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`tournament\` CHANGE \`description\` \`description\` text NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`tournament_team\` CHANGE \`teamId\` \`teamId\` varchar(36) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`tournament_team\` CHANGE \`tournamentId\` \`tournamentId\` varchar(36) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`contactEmail\` \`contactEmail\` varchar(255) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`captainName\` \`captainName\` varchar(255) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`description\` \`description\` text NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`homeGround\` \`homeGround\` varchar(255) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`foundedYear\` \`foundedYear\` int NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`country\` \`country\` varchar(255) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`state\` \`state\` varchar(255) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`city\` \`city\` varchar(255) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`teamType\` \`teamType\` enum ('Club', 'School', 'College', 'Corporate', 'Academy') NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`logoUrl\` \`logoUrl\` longtext NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`team\` CHANGE \`shortName\` \`shortName\` varchar(255) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`team_member\` CHANGE \`teamId\` \`teamId\` varchar(36) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`team_member\` CHANGE \`jerseyNumber\` \`jerseyNumber\` int NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`team_member\` CHANGE \`position\` \`position\` varchar(255) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`organizer\` CHANGE \`tournamentId\` \`tournamentId\` varchar(36) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`organizer\` CHANGE \`website\` \`website\` varchar(255) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`organizer\` CHANGE \`phone\` \`phone\` varchar(255) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`organizer\` CHANGE \`email\` \`email\` varchar(255) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`organizer\` CHANGE \`name\` \`name\` varchar(255) NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`permissions\` DROP COLUMN \`module_access\``);
+        await queryRunner.query(`ALTER TABLE \`permissions\` ADD \`module_access\` longtext COLLATE "utf8mb4_bin" NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`ALTER TABLE \`users\` CHANGE \`roleId\` \`roleId\` int NULL DEFAULT 'NULL'`);
+        await queryRunner.query(`DROP INDEX \`REL_3dd7c6e89c59e847a559aa620b\` ON \`tournament_formats\``);
+        await queryRunner.query(`DROP TABLE \`tournament_formats\``);
+        await queryRunner.query(`DROP TABLE \`format_stages\``);
+        await queryRunner.query(`DROP TABLE \`format_knockout_settings\``);
+        await queryRunner.query(`DROP TABLE \`format_group_settings\``);
+        await queryRunner.query(`DROP TABLE \`tournament_tiebreakers\``);
+        await queryRunner.query(`CREATE INDEX \`FK_e7ea12e2d49a7f5e6e1481429a1\` ON \`tournament_team\` (\`teamId\`)`);
+        await queryRunner.query(`CREATE INDEX \`FK_a57753f0e48a8681c0b2163ed12\` ON \`tournament_team\` (\`tournamentId\`)`);
+        await queryRunner.query(`CREATE INDEX \`FK_74da8f612921485e1005dc8e225\` ON \`team_member\` (\`teamId\`)`);
+        await queryRunner.query(`CREATE INDEX \`FK_368e146b785b574f42ae9e53d5e\` ON \`users\` (\`roleId\`)`);
+    }
+
+}
