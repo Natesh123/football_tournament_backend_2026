@@ -284,7 +284,12 @@ export const MatchController = {
             if (!match) return res.status(404).json({ success: false, message: "Match not found" });
 
             if (venue !== undefined) match.venue = venue;
-            if (matchTime !== undefined) match.startTime = new Date(matchTime);
+            if (matchTime !== undefined && matchTime !== null && matchTime !== '') {
+                const parsed = new Date(matchTime);
+                if (!isNaN(parsed.getTime())) {
+                    match.startTime = parsed;
+                }
+            }
             if (breakDuration !== undefined) match.breakDuration = breakDuration;
             if (matchReferees !== undefined) match.matchReferees = matchReferees;
 
@@ -330,7 +335,7 @@ export const MatchController = {
 
             const match = await matchRepo.findOne({
                 where: { id: Number(id) },
-                relations: ["homeTeam", "awayTeam", "group"]
+                relations: ["homeTeam", "awayTeam", "group", "tournament"]
             });
 
             if (!match || !match.homeTeam || !match.awayTeam) {
@@ -339,6 +344,7 @@ export const MatchController = {
 
             const homeTeamId = match.homeTeam.id;
             const awayTeamId = match.awayTeam.id;
+            const tournamentId = match.tournament?.id;
 
             // Find previous matches between these two teams
             const previousMatches = await matchRepo.find({
@@ -351,11 +357,11 @@ export const MatchController = {
                 relations: ["homeTeam", "awayTeam", "tournament"]
             });
 
-            // Get recent form (last 5 matches) for Home Team
+            // Get recent form (last 5 matches) for Home Team - FILTERED BY TOURNAMENT
             const homeRecent = await matchRepo.find({
                 where: [
-                    { homeTeam: { id: homeTeamId }, status: "completed" as any },
-                    { awayTeam: { id: homeTeamId }, status: "completed" as any }
+                    { homeTeam: { id: homeTeamId }, status: "completed" as any, tournament: { id: tournamentId } },
+                    { awayTeam: { id: homeTeamId }, status: "completed" as any, tournament: { id: tournamentId } }
                 ],
                 order: { startTime: "DESC" },
                 take: 5,
@@ -371,11 +377,11 @@ export const MatchController = {
                 }
             });
 
-            // Get recent form (last 5 matches) for Away Team
+            // Get recent form (last 5 matches) for Away Team - FILTERED BY TOURNAMENT
             const awayRecent = await matchRepo.find({
                 where: [
-                    { homeTeam: { id: awayTeamId }, status: "completed" as any },
-                    { awayTeam: { id: awayTeamId }, status: "completed" as any }
+                    { homeTeam: { id: awayTeamId }, status: "completed" as any, tournament: { id: tournamentId } },
+                    { awayTeam: { id: awayTeamId }, status: "completed" as any, tournament: { id: tournamentId } }
                 ],
                 order: { startTime: "DESC" },
                 take: 5,
@@ -404,9 +410,30 @@ export const MatchController = {
                         goals_for: "DESC"
                     }
                 });
-                groupStandings = {
-                    groupName: match.group.group_name,
-                    standings: teamsInGroup.map((gt, index) => ({
+
+                // Calculate form for each team in the group
+                const standingsWithForm = await Promise.all(teamsInGroup.map(async (gt, index) => {
+                    const teamId = gt.team?.id;
+                    const recent = await matchRepo.find({
+                        where: [
+                            { homeTeam: { id: teamId }, status: "completed" as any, tournament: { id: tournamentId } },
+                            { awayTeam: { id: teamId }, status: "completed" as any, tournament: { id: tournamentId } }
+                        ],
+                        order: { startTime: "DESC" },
+                        take: 5,
+                        relations: ["homeTeam", "awayTeam"]
+                    });
+
+                    const form = recent.map(m => {
+                        if (m.homeScore === m.awayScore) return 'D';
+                        if (m.homeTeam?.id === teamId) {
+                            return m.homeScore > m.awayScore ? 'W' : 'L';
+                        } else {
+                            return m.awayScore > m.homeScore ? 'W' : 'L';
+                        }
+                    });
+
+                    return {
                         position: index + 1,
                         teamId: gt.team?.id,
                         teamName: gt.team?.name,
@@ -418,8 +445,14 @@ export const MatchController = {
                         goalsFor: gt.goals_for,
                         goalsAgainst: gt.goals_against,
                         goalDifference: gt.goal_difference,
-                        points: gt.points
-                    }))
+                        points: gt.points,
+                        form: form
+                    };
+                }));
+
+                groupStandings = {
+                    groupName: match.group.group_name,
+                    standings: standingsWithForm
                 };
             }
 
