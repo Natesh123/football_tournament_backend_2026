@@ -60,19 +60,42 @@ export const PublicController = {
                 });
                 
                 // Map the standings, grouping by group name if you have multiple groups
-                standings = groupTeams.map(gt => ({
-                    teamId: gt.team?.id,
-                    teamName: gt.team?.name,
-                    teamLogo: gt.team?.logoUrl,
-                    played: gt.played,
-                    won: gt.wins,
-                    drawn: gt.draws,
-                    lost: gt.losses,
-                    goalsFor: gt.goals_for,
-                    goalsAgainst: gt.goals_against,
-                    goalDifference: gt.goal_difference,
-                    points: gt.points,
-                    groupName: gt.group?.group_name
+                standings = await Promise.all(groupTeams.map(async gt => {
+                    const teamId = gt.team?.id;
+                    const recent = await matchRepo.find({
+                        where: [
+                            { homeTeam: { id: teamId }, status: "completed" as any, tournament: { id: tournamentId } },
+                            { awayTeam: { id: teamId }, status: "completed" as any, tournament: { id: tournamentId } }
+                        ],
+                        order: { startTime: "DESC" },
+                        take: 5,
+                        relations: ["homeTeam", "awayTeam"]
+                    });
+
+                    const form = recent.map(m => {
+                        if (m.homeScore === m.awayScore) return 'D';
+                        if (m.homeTeam?.id === teamId) {
+                            return m.homeScore > m.awayScore ? 'W' : 'L';
+                        } else {
+                            return m.awayScore > m.homeScore ? 'W' : 'L';
+                        }
+                    });
+
+                    return {
+                        teamId: gt.team?.id,
+                        teamName: gt.team?.name,
+                        teamLogo: gt.team?.logoUrl,
+                        played: gt.played,
+                        won: gt.wins,
+                        drawn: gt.draws,
+                        lost: gt.losses,
+                        goalsFor: gt.goals_for,
+                        goalsAgainst: gt.goals_against,
+                        goalDifference: gt.goal_difference,
+                        points: gt.points,
+                        groupName: gt.group?.group_name,
+                        form: form
+                    };
                 }));
             }
 
