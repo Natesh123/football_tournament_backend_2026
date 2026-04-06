@@ -1,4 +1,5 @@
 import { AppDataSource } from "../../config/data-source";
+import { Not } from "typeorm";
 import { UserRole } from "../../entities/role.entity";
 import { User } from "../../entities/user.entity";
 import { Permission } from "../../entities/permission.entity";
@@ -17,7 +18,8 @@ export async function createRole(name: string) {
 
 export async function getAllRoles() {
     const roleRepository = AppDataSource.getRepository(UserRole);
-    return await roleRepository.find();
+    // @ts-ignore
+    return await roleRepository.find({ where: { id: Not(1) } });
 }
 
 export async function getAllUsers() {
