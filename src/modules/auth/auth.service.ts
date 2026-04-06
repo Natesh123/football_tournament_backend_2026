@@ -78,7 +78,10 @@ export async function verifyOtp(email: string, otp: string) {
             id: user.id,
             email: user.email,
             user_name: user.user_name,
+            phone_number: user.phone_number,
             role: user.userRole?.name || 'user',
+            roleId: user.roleId,
+            state: user.state,
             permissions
         }
     };
@@ -103,10 +106,28 @@ export async function loginUser(email: string, password: string) {
 
     const match = await bcrypt.compare(password, user.password);
     if (!match) {
+        console.warn(`[Login] Password mismatch for email: '${cleanEmail}'`);
         throw new Error("Invalid password");
     }
+    console.log(`[Login] Successful authentication for user ID: ${user.id}`);
+
     const permRepo = AppDataSource.getRepository(Permission);
-    const permissions = await permRepo.findOne({ where: { roleId: user.roleId || 0 } });
+    let permissions: any = await permRepo.findOne({ where: { roleId: user.roleId || 0 } });
+
+    // Requirement: If role_id = 1 (admin), then all modules should be visible
+    if (user.roleId === 1) {
+        permissions = {
+            module_access: {
+                can_dashboard: true,
+                can_tournaments: true,
+                can_teams: true,
+                can_roles: true,
+                can_permissions: true,
+                can_users: true,
+                can_settings: true
+            }
+        };
+    }
 
     const token = generateToken({
         id: user.id,
@@ -123,7 +144,10 @@ export async function loginUser(email: string, password: string) {
             id: user.id,
             email: user.email,
             user_name: user.user_name,
+            phone_number: user.phone_number,
             role: user.userRole?.name || 'user',
+            roleId: user.roleId,
+            state: user.state,
             permissions
         }
     };
@@ -141,7 +165,22 @@ export async function validateTokenService(token: string) {
         if (!user) throw new Error("User not found");
 
         const permRepo = AppDataSource.getRepository(Permission);
-        const permissions = await permRepo.findOne({ where: { roleId: user.roleId || 0 } });
+        let permissions: any = await permRepo.findOne({ where: { roleId: user.roleId || 0 } });
+
+        // Requirement: If role_id = 1 (admin), then all modules should be visible
+        if (user.roleId === 1) {
+            permissions = {
+                module_access: {
+                    can_dashboard: true,
+                    can_tournaments: true,
+                    can_teams: true,
+                    can_roles: true,
+                    can_permissions: true,
+                    can_users: true,
+                    can_settings: true
+                }
+            };
+        }
 
         return {
             valid: true,
@@ -149,11 +188,15 @@ export async function validateTokenService(token: string) {
                 id: user.id,
                 email: user.email,
                 user_name: user.user_name,
+                phone_number: user.phone_number,
                 role: user.userRole?.name || 'user',
+                roleId: user.roleId,
+                state: user.state,
                 permissions
             }
         };
-    } catch (err) {
+    } catch (err: any) {
+        console.error(`[Token Validation] Error for token: ${token.substring(0, 10)}... Error: ${err.message}`);
         throw new Error("Invalid token");
     }
 }
