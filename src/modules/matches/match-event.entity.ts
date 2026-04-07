@@ -63,6 +63,10 @@ export class MatchEvent {
     })
     teamSide?: MatchEventTeamSide;
 
+    /** Secondary player name (e.g. Assist provider or substitution incoming player) */
+    @Column({ name: "assist_player_name", type: "varchar", length: 255, nullable: true })
+    assistPlayerName?: string;
+
     /**
      * Optional FK → team entity (SET NULL on delete).
      * Kept alongside `teamSide` so we can resolve team details when needed.
