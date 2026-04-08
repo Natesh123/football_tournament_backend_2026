@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { AppDataSource } from "../../config/data-source";
 import { Match, MatchStatus } from "./match.entity";
 import { emitMatchUpdate } from "../../socket";
+import { TeamMember } from "../teams/team-member.entity";
 
 import { GroupTeam } from "../tournaments/group-team.entity";
 import { MatchSource } from "./match-source.entity";
@@ -582,14 +583,59 @@ export const MatchController = {
             
             const savedEvent = await eventRepo.save(newEvent);
 
-            // If it's a goal, update the score
             if (savedEvent.type === MatchEventType.GOAL) {
                 if (team === 'home') {
-                    match.homeScore += 1;
+                    match.homeScore = (match.homeScore || 0) + 1;
                 } else if (team === 'away') {
-                    match.awayScore += 1;
+                    match.awayScore = (match.awayScore || 0) + 1;
                 }
                 await matchRepo.save(match);
+            } else if (savedEvent.type === MatchEventType.OWN_GOAL) {
+                if (team === 'home') {
+                    match.awayScore = (match.awayScore || 0) + 1;
+                } else if (team === 'away') {
+                    match.homeScore = (match.homeScore || 0) + 1;
+                }
+                await matchRepo.save(match);
+            } else if (savedEvent.type === MatchEventType.SUBSTITUTION && savedEvent.assistPlayerName) {
+                let lineupObj = null;
+                try {
+                    lineupObj = team === 'home' ? 
+                        (typeof match.homeLineup === 'string' ? JSON.parse(match.homeLineup) : match.homeLineup) : 
+                        (typeof match.awayLineup === 'string' ? JSON.parse(match.awayLineup) : match.awayLineup);
+                } catch(e) {}
+
+                if (lineupObj && lineupObj.starting && lineupObj.subs) {
+                    const teamMemberRepo = AppDataSource.getRepository(TeamMember);
+                    const playerOut = await teamMemberRepo.findOne({ where: { name: savedEvent.playerName, team: { id: Number(teamId) } } });
+                    const playerIn = await teamMemberRepo.findOne({ where: { name: savedEvent.assistPlayerName, team: { id: Number(teamId) } } });
+
+                    const outIdx = lineupObj.starting.findIndex((el: any) => 
+                        (el.name === savedEvent.playerName) || 
+                        (playerOut && (el?.toString() === playerOut.id?.toString()))
+                    );
+
+                    const inIdx = lineupObj.subs.findIndex((el: any) => 
+                        (el.name === savedEvent.assistPlayerName) || 
+                        (playerIn && (el?.toString() === playerIn.id?.toString()))
+                    );
+
+                    if (outIdx !== -1 && inIdx !== -1) {
+                         const outObj = lineupObj.starting[outIdx];
+                         const inObj = lineupObj.subs[inIdx];
+
+                         lineupObj.starting.splice(outIdx, 1);
+                         lineupObj.subs.splice(inIdx, 1);
+
+                         lineupObj.starting.push(inObj);
+                         lineupObj.subs.push(outObj);
+                        
+                        if (team === 'home') match.homeLineup = lineupObj;
+                        if (team === 'away') match.awayLineup = lineupObj;
+                        
+                        await matchRepo.save(match);
+                    }
+                }
             }
 
             res.status(201).json({ success: true, data: savedEvent });
@@ -645,9 +691,19 @@ export const MatchController = {
                 const isAwayGoal = (event.team && match.awayTeam && event.team.id === match.awayTeam.id) || (event.teamSide === 'away');
 
                 if (isHomeGoal) {
-                    match.homeScore = Math.max(0, match.homeScore - 1);
+                    match.homeScore = Math.max(0, (match.homeScore || 0) - 1);
                 } else if (isAwayGoal) {
-                    match.awayScore = Math.max(0, match.awayScore - 1);
+                    match.awayScore = Math.max(0, (match.awayScore || 0) - 1);
+                }
+                await matchRepo.save(match);
+            } else if (match && event.type === MatchEventType.OWN_GOAL) {
+                const isHomeGoal = (event.team && match.homeTeam && event.team.id === match.homeTeam.id) || (event.teamSide === 'home');
+                const isAwayGoal = (event.team && match.awayTeam && event.team.id === match.awayTeam.id) || (event.teamSide === 'away');
+
+                if (isHomeGoal) {
+                    match.awayScore = Math.max(0, (match.awayScore || 0) - 1);
+                } else if (isAwayGoal) {
+                    match.homeScore = Math.max(0, (match.homeScore || 0) - 1);
                 }
                 await matchRepo.save(match);
             }
