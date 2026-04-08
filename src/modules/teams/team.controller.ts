@@ -99,4 +99,36 @@ export class TeamController {
             res.status(500).json({ message: "Failed to delete photo", error: error?.message });
         }
     };
+
+    update = async (req: Request, res: Response) => {
+        const teamId = req.params['id'] as string;
+        const tempFile = (req as any).file as Express.Multer.File | undefined;
+        try {
+            // 1. Update basic info first
+            const updatedTeam = await this.teamService.update(teamId, {
+                ...req.body,
+                foundedYear: req.body.foundedYear ? Number(req.body.foundedYear) : undefined,
+            });
+
+            if (!updatedTeam) {
+                return res.status(404).json({ message: "Team not found" });
+            }
+
+            // 2. If a new logo was uploaded, move it from temp → uploads/teams/{teamId}/logo/
+            if (tempFile) {
+                const logoUrl = moveLogoToTeamFolder(tempFile.path, teamId);
+                await this.teamService.updateLogoUrl(teamId, logoUrl);
+                updatedTeam.logoUrl = logoUrl;
+            }
+
+            res.json(updatedTeam);
+        } catch (error: any) {
+            // Clean up temp file on failure
+            if (tempFile && fs.existsSync(tempFile.path)) {
+                fs.unlinkSync(tempFile.path);
+            }
+            console.error("Update team error:", error);
+            res.status(500).json({ message: "Failed to update team", error: error?.message ?? String(error) });
+        }
+    };
 }

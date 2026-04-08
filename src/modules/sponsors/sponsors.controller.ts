@@ -6,9 +6,12 @@ const sponsorsService = new SponsorsService();
 export class SponsorsController {
     async getAll(req: Request, res: Response) {
         try {
+            console.log('[SponsorsController] Fetching all sponsors with query:', req.query);
             const sponsors = await sponsorsService.getAll(req.query);
+            console.log(`[SponsorsController] Found ${sponsors.length} sponsors`);
             res.json(sponsors);
         } catch (error: any) {
+            console.error('[SponsorsController] Error fetching sponsors:', error);
             res.status(500).json({ message: error.message });
         }
     }
