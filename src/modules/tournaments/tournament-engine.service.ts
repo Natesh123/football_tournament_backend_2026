@@ -62,11 +62,13 @@ export class TournamentEngineService {
         const matches = await this.matchRepo.find({ where: { tournament: { id: tournamentId } } });
         if (matches.length > 0) {
             const matchIds = matches.map(m => m.id);
-            await this.matchSourceRepo.delete({ match: { id: process.env.DB_TYPE === 'mysql' ? null : null as any } }); // Simplify raw query deletion
+            
+            // Delete match sources first to avoid relation issues if DB cascade isn't perfect
+            await this.matchSourceRepo.createQueryBuilder()
+                .delete()
+                .where("match_id IN (:...ids)", { ids: matchIds })
+                .execute();
 
-            for (const matchId of matchIds) {
-                await this.matchSourceRepo.delete({ match: { id: matchId } });
-            }
             await this.matchRepo.delete(matchIds);
         }
 
@@ -196,7 +198,9 @@ export class TournamentEngineService {
 
         let currentDate = new Date(config.startDate);
         const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-        const allowedDays = config.matchDays || { 'SAT': true, 'SUN': true }; // Default weekend
+        const allowedDays = (config.matchDays && Object.values(config.matchDays).some(v => v))
+            ? config.matchDays
+            : { 'MON': true, 'TUE': true, 'WED': true, 'THU': true, 'FRI': true, 'SAT': true, 'SUN': true };
         const timeSlots = (config.timeSlots || "18:00").split(',').map((s: string) => s.trim()).filter((s: string) => s);
         if (timeSlots.length === 0) timeSlots.push("18:00");
 
@@ -300,8 +304,18 @@ export class TournamentEngineService {
     }
 
     private async generateKnockoutPhase(tournament: Tournament) {
-        const settings = tournament.format?.knockout_settings;
-        if (!settings) throw new Error("Knockout settings missing");
+        let settings = tournament.format?.knockout_settings;
+
+        // Graceful fallback: if no knockout settings exist, derive from team count
+        if (!settings) {
+            const teamCount = tournament.teamRegistrations?.length ?? 0;
+            // Round down to nearest power of 2 (minimum 2)
+            const qualifiedTeams = teamCount >= 2
+                ? Math.pow(2, Math.floor(Math.log2(teamCount)))
+                : 2;
+            console.warn(`[generateKnockoutPhase] No knockout_settings found. Defaulting qualified_teams to ${qualifiedTeams}`);
+            settings = { qualified_teams: qualifiedTeams } as any;
+        }
 
         const stageOrder = tournament.format!.format_type === "groups_knockout" ? 2 : 1;
 
@@ -311,12 +325,12 @@ export class TournamentEngineService {
             stage_order: stageOrder,
             stage_type: "knockout",
             stage_name: "Knockout Stage",
-            teams_count: settings.qualified_teams
+            teams_count: settings!.qualified_teams
         });
         await this.stageRepo.save(stage);
 
         // Math for brackets
-        const numTeams = settings.qualified_teams;
+        const numTeams = settings!.qualified_teams;
         const roundsLog = Math.log2(numTeams);
         if (!Number.isInteger(roundsLog)) throw new Error("Number of knockout teams must be a power of 2");
 

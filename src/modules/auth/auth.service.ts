@@ -140,6 +140,7 @@ export async function loginUser(email: string, password: string) {
             email: user.email,
             user_name: user.user_name,
             role: user.userRole?.name || 'user',
+            roleId: user.roleId,
             permissions
         }
     };

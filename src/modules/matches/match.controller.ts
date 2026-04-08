@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { AppDataSource } from "../../config/data-source";
 import { Match, MatchStatus } from "./match.entity";
 import { emitMatchUpdate } from "../../socket";
+import { TeamMember } from "../teams/team-member.entity";
 
 import { GroupTeam } from "../tournaments/group-team.entity";
 import { MatchSource } from "./match-source.entity";
@@ -284,7 +285,12 @@ export const MatchController = {
             if (!match) return res.status(404).json({ success: false, message: "Match not found" });
 
             if (venue !== undefined) match.venue = venue;
-            if (matchTime !== undefined) match.startTime = new Date(matchTime);
+            if (matchTime !== undefined && matchTime !== null && matchTime !== '') {
+                const parsed = new Date(matchTime);
+                if (!isNaN(parsed.getTime())) {
+                    match.startTime = parsed;
+                }
+            }
             if (breakDuration !== undefined) match.breakDuration = breakDuration;
             if (matchReferees !== undefined) match.matchReferees = matchReferees;
 
@@ -330,7 +336,7 @@ export const MatchController = {
 
             const match = await matchRepo.findOne({
                 where: { id: Number(id) },
-                relations: ["homeTeam", "awayTeam", "group"]
+                relations: ["homeTeam", "awayTeam", "group", "tournament"]
             });
 
             if (!match || !match.homeTeam || !match.awayTeam) {
@@ -339,6 +345,7 @@ export const MatchController = {
 
             const homeTeamId = match.homeTeam.id;
             const awayTeamId = match.awayTeam.id;
+            const tournamentId = match.tournament?.id;
 
             // Find previous matches between these two teams
             const previousMatches = await matchRepo.find({
@@ -351,11 +358,11 @@ export const MatchController = {
                 relations: ["homeTeam", "awayTeam", "tournament"]
             });
 
-            // Get recent form (last 5 matches) for Home Team
+            // Get recent form (last 5 matches) for Home Team - FILTERED BY TOURNAMENT
             const homeRecent = await matchRepo.find({
                 where: [
-                    { homeTeam: { id: homeTeamId }, status: "completed" as any },
-                    { awayTeam: { id: homeTeamId }, status: "completed" as any }
+                    { homeTeam: { id: homeTeamId }, status: "completed" as any, tournament: { id: tournamentId } },
+                    { awayTeam: { id: homeTeamId }, status: "completed" as any, tournament: { id: tournamentId } }
                 ],
                 order: { startTime: "DESC" },
                 take: 5,
@@ -371,11 +378,11 @@ export const MatchController = {
                 }
             });
 
-            // Get recent form (last 5 matches) for Away Team
+            // Get recent form (last 5 matches) for Away Team - FILTERED BY TOURNAMENT
             const awayRecent = await matchRepo.find({
                 where: [
-                    { homeTeam: { id: awayTeamId }, status: "completed" as any },
-                    { awayTeam: { id: awayTeamId }, status: "completed" as any }
+                    { homeTeam: { id: awayTeamId }, status: "completed" as any, tournament: { id: tournamentId } },
+                    { awayTeam: { id: awayTeamId }, status: "completed" as any, tournament: { id: tournamentId } }
                 ],
                 order: { startTime: "DESC" },
                 take: 5,
@@ -404,9 +411,30 @@ export const MatchController = {
                         goals_for: "DESC"
                     }
                 });
-                groupStandings = {
-                    groupName: match.group.group_name,
-                    standings: teamsInGroup.map((gt, index) => ({
+
+                // Calculate form for each team in the group
+                const standingsWithForm = await Promise.all(teamsInGroup.map(async (gt, index) => {
+                    const teamId = gt.team?.id;
+                    const recent = await matchRepo.find({
+                        where: [
+                            { homeTeam: { id: teamId }, status: "completed" as any, tournament: { id: tournamentId } },
+                            { awayTeam: { id: teamId }, status: "completed" as any, tournament: { id: tournamentId } }
+                        ],
+                        order: { startTime: "DESC" },
+                        take: 5,
+                        relations: ["homeTeam", "awayTeam"]
+                    });
+
+                    const form = recent.map(m => {
+                        if (m.homeScore === m.awayScore) return 'D';
+                        if (m.homeTeam?.id === teamId) {
+                            return m.homeScore > m.awayScore ? 'W' : 'L';
+                        } else {
+                            return m.awayScore > m.homeScore ? 'W' : 'L';
+                        }
+                    });
+
+                    return {
                         position: index + 1,
                         teamId: gt.team?.id,
                         teamName: gt.team?.name,
@@ -418,8 +446,14 @@ export const MatchController = {
                         goalsFor: gt.goals_for,
                         goalsAgainst: gt.goals_against,
                         goalDifference: gt.goal_difference,
-                        points: gt.points
-                    }))
+                        points: gt.points,
+                        form: form
+                    };
+                }));
+
+                groupStandings = {
+                    groupName: match.group.group_name,
+                    standings: standingsWithForm
                 };
             }
 
@@ -549,14 +583,59 @@ export const MatchController = {
             
             const savedEvent = await eventRepo.save(newEvent);
 
-            // If it's a goal, update the score
             if (savedEvent.type === MatchEventType.GOAL) {
                 if (team === 'home') {
-                    match.homeScore += 1;
+                    match.homeScore = (match.homeScore || 0) + 1;
                 } else if (team === 'away') {
-                    match.awayScore += 1;
+                    match.awayScore = (match.awayScore || 0) + 1;
                 }
                 await matchRepo.save(match);
+            } else if (savedEvent.type === MatchEventType.OWN_GOAL) {
+                if (team === 'home') {
+                    match.awayScore = (match.awayScore || 0) + 1;
+                } else if (team === 'away') {
+                    match.homeScore = (match.homeScore || 0) + 1;
+                }
+                await matchRepo.save(match);
+            } else if (savedEvent.type === MatchEventType.SUBSTITUTION && savedEvent.assistPlayerName) {
+                let lineupObj = null;
+                try {
+                    lineupObj = team === 'home' ? 
+                        (typeof match.homeLineup === 'string' ? JSON.parse(match.homeLineup) : match.homeLineup) : 
+                        (typeof match.awayLineup === 'string' ? JSON.parse(match.awayLineup) : match.awayLineup);
+                } catch(e) {}
+
+                if (lineupObj && lineupObj.starting && lineupObj.subs) {
+                    const teamMemberRepo = AppDataSource.getRepository(TeamMember);
+                    const playerOut = await teamMemberRepo.findOne({ where: { name: savedEvent.playerName, team: { id: Number(teamId) } } });
+                    const playerIn = await teamMemberRepo.findOne({ where: { name: savedEvent.assistPlayerName, team: { id: Number(teamId) } } });
+
+                    const outIdx = lineupObj.starting.findIndex((el: any) => 
+                        (el.name === savedEvent.playerName) || 
+                        (playerOut && (el?.toString() === playerOut.id?.toString()))
+                    );
+
+                    const inIdx = lineupObj.subs.findIndex((el: any) => 
+                        (el.name === savedEvent.assistPlayerName) || 
+                        (playerIn && (el?.toString() === playerIn.id?.toString()))
+                    );
+
+                    if (outIdx !== -1 && inIdx !== -1) {
+                         const outObj = lineupObj.starting[outIdx];
+                         const inObj = lineupObj.subs[inIdx];
+
+                         lineupObj.starting.splice(outIdx, 1);
+                         lineupObj.subs.splice(inIdx, 1);
+
+                         lineupObj.starting.push(inObj);
+                         lineupObj.subs.push(outObj);
+                        
+                        if (team === 'home') match.homeLineup = lineupObj;
+                        if (team === 'away') match.awayLineup = lineupObj;
+                        
+                        await matchRepo.save(match);
+                    }
+                }
             }
 
             res.status(201).json({ success: true, data: savedEvent });
@@ -612,9 +691,19 @@ export const MatchController = {
                 const isAwayGoal = (event.team && match.awayTeam && event.team.id === match.awayTeam.id) || (event.teamSide === 'away');
 
                 if (isHomeGoal) {
-                    match.homeScore = Math.max(0, match.homeScore - 1);
+                    match.homeScore = Math.max(0, (match.homeScore || 0) - 1);
                 } else if (isAwayGoal) {
-                    match.awayScore = Math.max(0, match.awayScore - 1);
+                    match.awayScore = Math.max(0, (match.awayScore || 0) - 1);
+                }
+                await matchRepo.save(match);
+            } else if (match && event.type === MatchEventType.OWN_GOAL) {
+                const isHomeGoal = (event.team && match.homeTeam && event.team.id === match.homeTeam.id) || (event.teamSide === 'home');
+                const isAwayGoal = (event.team && match.awayTeam && event.team.id === match.awayTeam.id) || (event.teamSide === 'away');
+
+                if (isHomeGoal) {
+                    match.awayScore = Math.max(0, (match.awayScore || 0) - 1);
+                } else if (isAwayGoal) {
+                    match.homeScore = Math.max(0, (match.homeScore || 0) - 1);
                 }
                 await matchRepo.save(match);
             }

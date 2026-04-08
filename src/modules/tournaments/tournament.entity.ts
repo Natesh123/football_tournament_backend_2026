@@ -2,6 +2,7 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateCol
 import { Organizer } from "./organizer.entity";
 import { TournamentTeam } from "./tournament-team.entity";
 import { TournamentFormat } from "./tournament-format.entity";
+import { TournamentSponsor } from "./tournament-sponsor.entity";
 import { Match } from "../matches/match.entity";
 import { TournamentRules } from "./tournament-rules.entity";
 
@@ -98,6 +99,9 @@ export class Tournament {
 
     @OneToMany(() => Match, (match) => match.tournament)
     matches!: Match[];
+
+    @OneToMany(() => TournamentSponsor, (ts) => ts.tournament)
+    tournamentSponsors!: TournamentSponsor[];
 
     @Column({ nullable: true })
     ownerId?: number;
