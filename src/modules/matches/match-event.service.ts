@@ -11,6 +11,7 @@ export interface CreateMatchEventDto {
     /** Optional numeric team FK id */
     teamId?: number;
     details?: string;
+    assistPlayerName?: string;
 }
 
 export class MatchEventService {
@@ -47,6 +48,7 @@ export class MatchEventService {
             playerName: dto.playerName,
             teamSide: dto.teamSide,
             details: dto.details,
+            assistPlayerName: dto.assistPlayerName,
         });
 
         // Optionally link to team entity by id
