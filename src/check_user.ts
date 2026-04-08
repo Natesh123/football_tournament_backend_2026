@@ -7,18 +7,30 @@ async function main() {
         await AppDataSource.initialize();
         console.log("Database connected");
 
-        const email = "svigneshwaran673@gmail.com";
+        const email = "stapcvs@gmail.com";
         const userRepo = AppDataSource.getRepository(User);
         const user = await userRepo.findOne({ where: { email } });
 
         if (user) {
-            console.log("User found:");
+            console.log("User found in USER table:");
             console.log("ID:", user.id);
             console.log("Email:", user.email);
             console.log("Username:", user.user_name);
-            console.log("Phone:", user.phone_number);
         } else {
-            console.log("User not found with email:", email);
+            console.log("User not found in USER table.");
+        }
+
+        const { PendingUser } = require("./entities/pending_user.entity");
+        const pendingRepo = AppDataSource.getRepository(PendingUser);
+        const pending = await pendingRepo.findOne({ where: { email } });
+
+        if (pending) {
+            console.log("\nUser found in PENDING table (Awaiting OTP):");
+            console.log("Email:", pending.email);
+            console.log("OTP:", pending.otp);
+            console.log("Expires At:", pending.expires_at);
+        } else {
+            console.log("\nUser not found in PENDING table.");
         }
 
     } catch (err) {
