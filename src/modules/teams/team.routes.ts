@@ -9,6 +9,7 @@ const teamController = new TeamController();
 router.get("/", teamController.getAll);
 router.get("/:id", teamController.getById);
 router.post("/", uploadTempLogo, teamController.create);
+router.put("/:id", uploadTempLogo, teamController.update);
 
 // ── Gallery ───────────────────────────────────────────────────────────────────
 router.get("/:teamId/gallery", teamController.getGallery);

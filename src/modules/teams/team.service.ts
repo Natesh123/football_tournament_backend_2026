@@ -31,4 +31,9 @@ export class TeamService {
     async updateLogoUrl(id: string, logoUrl: string) {
         await this.teamRepository.update(id, { logoUrl });
     }
+
+    async update(id: string, data: Partial<Team>) {
+        await this.teamRepository.update(parseInt(id), data);
+        return this.getById(id);
+    }
 }

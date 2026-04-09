@@ -5,6 +5,11 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 const getTransporter = () => {
+    // If SMTP is not fully configured, return null to signify console-only mode
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS || process.env.SMTP_PASS === 'YOUR_APP_PASSWORD_HERE') {
+        return null;
+    }
+
     const config: any = {
         host: process.env.SMTP_HOST || "smtp.gmail.com",
         port: parseInt(process.env.SMTP_PORT || "587"),
@@ -38,14 +43,13 @@ export async function sendOTP(email: string, otp: string, type: "registration" |
         : `Your login verification code is: ${otp}\n\nThis code will expire in 5 minutes.`;
 
     try {
-        // If SMTP is not configured, log to console for development
-        if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-            console.log(`\n=== OTP EMAIL (${type.toUpperCase()}) ===`);
+        // If transporter is null, SMTP is not configured
+        if (!transporter) {
+            console.log(`\n=== OTP EMAIL LOGGING (${type.toUpperCase()}) ===`);
             console.log(`To: ${email}`);
-            console.log(`Subject: ${subject}`);
             console.log(`OTP: ${otp}`);
             console.log(`===========================\n`);
-            return { success: true, message: "OTP logged to console (SMTP not configured)" };
+            return { success: true, message: "Logged to console (SMTP not configured)" };
         }
 
         const info = await transporter.sendMail({
@@ -75,7 +79,12 @@ export async function sendOTP(email: string, otp: string, type: "registration" |
 
         return { success: true, messageId: info.messageId };
     } catch (error: any) {
-        console.error("Email sending failed:", error);
+        if (error.message.includes('535') || error.message.includes('Username and Password not accepted')) {
+            console.error("\n[SMTP ERROR] Authentication failed! This is likely due to an incorrect Google App Password.");
+            console.error("Please ensure you are using a 16-character App Password, NOT your regular account password.");
+            console.error("Link: https://myaccount.google.com/apppasswords\n");
+        }
+        
         // Fallback to console log if email fails
         console.log(`\n=== OTP EMAIL FALLBACK (${type.toUpperCase()}) ===`);
         console.log(`To: ${email}`);
@@ -91,13 +100,13 @@ export async function sendPasswordEmail(email: string, password: string) {
     const message = `Welcome! Your account has been created successfully.\n\nYour login password is: ${password}\n\nPlease change your password after your first login.`;
 
     try {
-        if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-            console.log(`\n=== PASSWORD EMAIL ===`);
+        // If transporter is null, SMTP is not configured
+        if (!transporter) {
+            console.log(`\n=== PASSWORD EMAIL LOGGING ===`);
             console.log(`To: ${email}`);
-            console.log(`Subject: ${subject}`);
             console.log(`Password: ${password}`);
-            console.log(`======================\n`);
-            return { success: true, message: "Password logged to console (SMTP not configured)" };
+            console.log(`==========================\n`);
+            return { success: true, message: "Logged to console (SMTP not configured)" };
         }
 
         const info = await transporter.sendMail({
@@ -106,22 +115,27 @@ export async function sendPasswordEmail(email: string, password: string) {
             subject: subject,
             text: message,
             html: `
-                <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
-                    <h2 style="color: #667eea;">Welcome to Football Tournament!</h2>
-                    <p style="font-size: 16px; color: #333;">
-                        Your account has been created successfully.
-                    </p>
-                    <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                        <p style="margin: 0; font-size: 14px; color: #666;">Your login password is:</p>
-                        <h1 style="margin: 10px 0; color: #667eea; font-size: 24px; letter-spacing: 2px;">${password}</h1>
+                    <div style="background-color: #0c0c0c; color: #ffffff; padding: 40px; border: 1px solid #d4af37; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+                        <div style="text-align: center; margin-bottom: 30px;">
+                            <h1 style="color: #d4af37; font-size: 28px; margin: 0; text-transform: uppercase; letter-spacing: 3px;">Account Created</h1>
+                            <p style="color: #888; font-size: 14px; margin-top: 10px;">Welcome to the Football Tournament Management System</p>
+                        </div>
+                        
+                        <div style="background: rgba(212, 175, 55, 0.05); border: 1px dashed rgba(212, 175, 55, 0.3); padding: 25px; border-radius: 12px; margin: 25px 0; text-align: center;">
+                            <p style="margin: 0 0 10px 0; font-size: 12px; color: #aaa; text-transform: uppercase; letter-spacing: 1px;">Your temporary password is:</p>
+                            <h2 style="margin: 0; color: #d4af37; font-size: 32px; font-family: 'Courier New', monospace; letter-spacing: 5px;">${password}</h2>
+                        </div>
+
+                        <ul style="color: #ccc; font-size: 14px; padding-left: 20px; line-height: 1.6;">
+                            <li>Login at: <span style="color: #d4af37;">${process.env.FRONTEND_URL || 'Admin Panel'}</span></li>
+                            <li>Please change your password immediately after your first login.</li>
+                            <li>Do not share these credentials with anyone.</li>
+                        </ul>
+
+                        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #333; text-align: center;">
+                            <p style="font-size: 11px; color: #555;">&copy; 2026 Football Tournament Platform. All rights reserved.</p>
+                        </div>
                     </div>
-                    <p style="font-size: 14px; color: #666;">
-                        Please change your password after your first login.
-                    </p>
-                    <p style="font-size: 12px; color: #999; margin-top: 30px;">
-                        If you didn't request this account, please contact us.
-                    </p>
-                </div>
             `,
         });
 

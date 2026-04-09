@@ -101,6 +101,27 @@ export const uploadMatchPhotos = multer({
     fileFilter: imageFileFilter
 }).array('photos', 20);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SPONSOR LOGO
+// ─────────────────────────────────────────────────────────────────────────────
+const sponsorLogoDir = path.join(UPLOADS_ROOT, 'sponsors');
+ensureDir(sponsorLogoDir);
+
+const sponsorLogoStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => {
+        ensureDir(sponsorLogoDir);
+        cb(null, sponsorLogoDir);
+    },
+    filename: (_req, file, cb) => cb(null, uniqueFilename(file))
+});
+
+/** Upload sponsor logo */
+export const uploadSponsorLogo = multer({
+    storage: sponsorLogoStorage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+    fileFilter: imageFileFilter
+}).single('logo');
+
 /** Get all gallery image URLs for a team from disk */
 export function getTeamGalleryUrls(teamId: string): string[] {
     const galleryDir = path.join(UPLOADS_ROOT, 'teams', teamId, 'gallery');
