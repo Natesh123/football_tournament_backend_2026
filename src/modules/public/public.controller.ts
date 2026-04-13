@@ -1,5 +1,5 @@
 import { AppDataSource } from "../../config/data-source";
-import { Tournament } from "../tournaments/tournament.entity";
+import { Tournament, TournamentStatus } from "../tournaments/tournament.entity";
 import { TournamentPresentation } from "../tournaments/presentation/presentation.entity";
 import { GroupTeam } from "../tournaments/group-team.entity";
 import { Match } from "../matches/match.entity";
@@ -58,7 +58,7 @@ export const PublicController = {
                         goals_for: "DESC"
                     }
                 });
-                
+
                 // Map the standings, grouping by group name if you have multiple groups
                 standings = await Promise.all(groupTeams.map(async gt => {
                     const teamId = gt.team?.id;
@@ -127,7 +127,7 @@ export const PublicController = {
                     .where("tournament.id = :tournamentId", { tournamentId })
                     .andWhere("event.type = :type", { type: MatchEventType.GOAL })
                     .getMany();
-                
+
                 const scorerMap = new Map<string, any>();
                 goalEvents.forEach(evt => {
                     if (evt.playerName) {
@@ -156,6 +156,7 @@ export const PublicController = {
                     tournament: {
                         id: tournament.id,
                         name: tournament.name,
+                        description: tournament.description,
                         logo: tournament.logo,
                         status: tournament.status,
                         visibility: tournament.visibility
@@ -190,6 +191,38 @@ export const PublicController = {
 
         } catch (error: any) {
             console.error("Portal Data Error:", error);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    async getLatestTournamentId(req: any, res: any) {
+        try {
+            const tournamentRepo = AppDataSource.getRepository(Tournament);
+
+            // Priority 1: Registration Open or In Progress
+            let latest = await tournamentRepo.findOne({
+                where: [
+                    { visibility: 'public', status: TournamentStatus.REGISTRATION_OPEN },
+                    { visibility: 'public', status: TournamentStatus.IN_PROGRESS }
+                ],
+                order: { startDate: 'DESC' }
+            });
+
+            // Priority 2: Fallback to any public tournament
+            if (!latest) {
+                latest = await tournamentRepo.findOne({
+                    where: { visibility: 'public' },
+                    order: { startDate: 'DESC' }
+                });
+            }
+
+            if (!latest) {
+                return res.status(404).json({ success: false, message: "No public tournaments found" });
+            }
+
+            res.json({ success: true, id: latest.id });
+        } catch (error: any) {
+            console.error("Latest Tournament Error:", error);
             res.status(500).json({ success: false, message: error.message });
         }
     },
