@@ -9,5 +9,6 @@ router.get("/live",     authGuard as any, DashboardController.getLiveMatches);
 router.get("/upcoming", authGuard as any, DashboardController.getUpcomingMatches);
 router.get("/past",     authGuard as any, DashboardController.getPastMatches);
 router.get("/scorers",  authGuard as any, DashboardController.getTopScorers);
+router.get("/top-organizers", authGuard as any, DashboardController.getTopOrganizers);
 
 export default router;

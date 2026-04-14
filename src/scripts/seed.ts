@@ -60,13 +60,13 @@ async function seed() {
                     match.status = MatchStatus.LIVE;
                     match.homeScore = 2;
                     match.awayScore = 1;
-                    match.events = JSON.stringify([
+                    /* match.events = JSON.stringify([
                         { id: "1", type: "goal", minute: 15, team: "home", teamId: match.homeTeam?.id?.toString(), playerName: "John Doe", details: "Header" },
                         { id: "2", type: "yellow_card", minute: 30, team: "away", teamId: match.awayTeam?.id?.toString(), playerName: "Alex Smith", details: "Foul" },
                         { id: "3", type: "goal", minute: 45, team: "home", teamId: match.homeTeam?.id?.toString(), playerName: "Michael Johnson", details: "Penalty" },
                         { id: "4", type: "goal", minute: 60, team: "away", teamId: match.awayTeam?.id?.toString(), playerName: "Chris Davis", details: "Long shot" },
                         { id: "5", type: "substitution", minute: 70, team: "home", teamId: match.homeTeam?.id?.toString(), playerName: "Paul White", details: "John Doe" }
-                    ]);
+                    ]); */
                     await matchRepo.save(match);
                     liveCount++;
                 } else if (completedCount < 2) {
@@ -74,11 +74,11 @@ async function seed() {
                     match.status = MatchStatus.COMPLETED;
                     match.homeScore = 0;
                     match.awayScore = 3;
-                    match.events = JSON.stringify([
+                    /* match.events = JSON.stringify([
                         { id: "6", type: "goal", minute: 20, team: "away", teamId: match.awayTeam?.id?.toString(), playerName: "Alex Smith", details: "Tap in" },
                         { id: "7", type: "goal", minute: 50, team: "away", teamId: match.awayTeam?.id?.toString(), playerName: "David Brown", details: "Free kick" },
                         { id: "8", type: "goal", minute: 85, team: "away", teamId: match.awayTeam?.id?.toString(), playerName: "James Wilson", details: "Header" }
-                    ]);
+                    ]); */
                     await matchRepo.save(match);
                     completedCount++;
                 }
