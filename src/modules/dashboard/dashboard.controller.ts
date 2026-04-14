@@ -267,4 +267,34 @@ export const DashboardController = {
             res.status(500).json({ success: false, message: error.message });
         }
     },
+
+    /* ─── Top Organizers ─────────────────────────────────────────────── */
+    async getTopOrganizers(req: any, res: any) {
+        try {
+            const tournamentRepo = AppDataSource.getRepository(Tournament);
+            const organizers = await tournamentRepo
+                .createQueryBuilder("t")
+                .select("u.user_name", "name")
+                .addSelect("u.email", "email")
+                .addSelect("COUNT(t.id)", "tournamentsCount")
+                .innerJoin("users", "u", "u.id = t.ownerId")
+                .groupBy("u.id")
+                .orderBy("tournamentsCount", "DESC")
+                .limit(5)
+                .getRawMany();
+
+            res.json({
+                success: true,
+                data: organizers.map((o, i) => ({
+                    rank: i + 1,
+                    name: o.name || "Unknown",
+                    email: o.email || "",
+                    tournamentsCount: Number(o.tournamentsCount)
+                }))
+            });
+        } catch (error: any) {
+            console.error("[Dashboard] Error fetching top organizers:", error);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
 };
