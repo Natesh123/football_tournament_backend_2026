@@ -58,6 +58,10 @@ export async function verifyOtp(email: string, otp: string) {
     if (pendingUser.otp !== otp) throw new Error("Invalid OTP");
     if (new Date() > pendingUser.expires_at) throw new Error("OTP expired");
 
+    // Find the 'user' role
+    const roleRepo = AppDataSource.getRepository(UserRole);
+    const userRole = await roleRepo.findOne({ where: { name: 'user' } });
+
     // Create the actual user
     // @ts-ignore
     const user = userRepo.create({
@@ -65,6 +69,7 @@ export async function verifyOtp(email: string, otp: string) {
         password: pendingUser.password,
         user_name: pendingUser.user_name,
         phone_number: pendingUser.phone_number,
+        roleId: userRole ? userRole.id : undefined,
         state: 1,
         is_verified: true
     });

@@ -11,12 +11,12 @@ const getTransporter = () => {
     }
 
     const config: any = {
-        host: process.env.SMTP_HOST || "smtp.gmail.com",
-        port: parseInt(process.env.SMTP_PORT || "587"),
-        secure: process.env.SMTP_SECURE === "true", // true for 465, false for 587
+        host: (process.env.SMTP_HOST || "smtp.gmail.com").trim(),
+        port: parseInt((process.env.SMTP_PORT || "587").trim()),
+        secure: (process.env.SMTP_SECURE || "false").trim() === "true",
         auth: {
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS,
+            user: (process.env.SMTP_USER || "").trim(),
+            pass: (process.env.SMTP_PASS || "").trim(),
         },
     };
 
@@ -84,7 +84,7 @@ export async function sendOTP(email: string, otp: string, type: "registration" |
             console.error("Please ensure you are using a 16-character App Password, NOT your regular account password.");
             console.error("Link: https://myaccount.google.com/apppasswords\n");
         }
-        
+
         // Fallback to console log if email fails
         console.log(`\n=== OTP EMAIL FALLBACK (${type.toUpperCase()}) ===`);
         console.log(`To: ${email}`);
