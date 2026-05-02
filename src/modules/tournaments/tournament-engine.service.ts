@@ -29,6 +29,12 @@ export class TournamentEngineService {
             throw new Error("Tournament or format not found");
         }
 
+        const requiredTeams = tournament.maxTeams || 16;
+        const approvedTeams = tournament.teamRegistrations.filter(tr => tr.status === 'approved');
+        if (approvedTeams.length !== requiredTeams) {
+            throw new Error(`Need exactly ${requiredTeams} approved teams before scheduling. Currently have ${approvedTeams.length}.`);
+        }
+
         // Clean slate: delete all existing structure for this tournament
         await this.purgeExistingStructure(parseInt(tournamentId));
 

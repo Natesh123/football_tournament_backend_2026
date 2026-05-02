@@ -212,7 +212,7 @@ export const TournamentService = {
         const tournaments = await query.getMany();
         
         return Promise.all(tournaments.map(async t => {
-            const result: any = { ...t };
+            const result: any = { ...t, type: t.type || '11aside' };
             result.settings = {};
             if (t.rules) {
                 result.settings.rules = mapDtoToRules(t.rules);
@@ -241,7 +241,7 @@ export const TournamentService = {
         });
         if (!t) return null;
         
-        const result: any = { ...t };
+        const result: any = { ...t, type: t.type || '11aside' };
         result.settings = {};
         if (t.rules) {
             result.settings.rules = mapDtoToRules(t.rules);
@@ -272,7 +272,7 @@ export const TournamentService = {
             maxTeams: data.maxTeams || 16,
             status: data.status || TournamentStatus.DRAFT,
             shortName: data.shortName,
-            type: data.type,
+            type: data.type || '11aside',
             visibility: data.visibility,
             sponsors: data.sponsors,
             participantType: data.participantType,
@@ -451,6 +451,14 @@ export const TournamentService = {
         });
 
         if (existing) return existing;
+
+        // Enforce max teams limit
+        const currentCount = await tournamentTeamRepo.count({
+            where: { tournament: { id: parseInt(tournamentId) } }
+        });
+        if (currentCount >= (tournament.maxTeams || 16)) {
+            throw new Error(`Maximum team limit of ${tournament.maxTeams || 16} reached`);
+        }
 
         const registration = tournamentTeamRepo.create({
             tournament,
