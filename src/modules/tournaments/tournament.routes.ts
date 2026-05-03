@@ -23,6 +23,7 @@ router.delete("/:id/teams/:teamId", TournamentController.removeTeam);
 
 // --- Tournament Structure Engine ---
 router.post("/:id/generate-structure", TournamentController.generateStructure);
+router.post("/:id/seed-results", TournamentController.seedResults);
 router.get("/:id/structure", TournamentController.getStructure);
 
 // --- Match Rules ---
