@@ -193,7 +193,15 @@ export const MatchController = {
     async updateResult(req: any, res: any) {
         try {
             const { id } = req.params;
-            const { homeScore, awayScore } = req.body;
+            const { homeScore, awayScore, penaltyHome, penaltyAway, matchPeriod } = req.body;
+
+            if (homeScore === undefined || awayScore === undefined) {
+                return res.status(400).json({ success: false, message: "homeScore and awayScore are required" });
+            }
+
+            if (matchPeriod === "pso" && (penaltyHome === undefined || penaltyAway === undefined)) {
+                return res.status(400).json({ success: false, message: "penaltyHome and penaltyAway are required for PSO" });
+            }
 
             const matchRepo = AppDataSource.getRepository(Match);
             const matchSourceRepo = AppDataSource.getRepository(MatchSource);
@@ -207,6 +215,9 @@ export const MatchController = {
 
             match.homeScore = homeScore;
             match.awayScore = awayScore;
+            match.penaltyHome = penaltyHome;
+            match.penaltyAway = penaltyAway;
+            match.endPeriod = matchPeriod || "ft";
             match.status = MatchStatus.COMPLETED;
             await matchRepo.save(match);
 

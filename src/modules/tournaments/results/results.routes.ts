@@ -17,4 +17,24 @@ resultsRouter.get("/standings", async (req: any, res: any) => {
     }
 });
 
+// GET /api/tournaments/:id/results
+resultsRouter.get("/", async (req: any, res: any) => {
+    try {
+        const results = await resultsService.getResults(Number(req.params.id));
+        res.json({ success: true, data: results });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// GET /api/tournaments/:id/results/top-performance
+resultsRouter.get("/top-performance", async (req: any, res: any) => {
+    try {
+        const stats = await resultsService.getTopPerformance(Number(req.params.id));
+        res.json({ success: true, data: stats });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 export default resultsRouter;

@@ -114,10 +114,28 @@ export class Match {
     @UpdateDateColumn()
     updatedAt!: Date;
 
+    @Column({ type: "tinyint", nullable: true })
+    penaltyHome?: number;
+
+    @Column({ type: "tinyint", nullable: true })
+    penaltyAway?: number;
+
+    @Column({
+        type: "enum",
+        enum: ["ft", "aet", "pso"],
+        default: "ft",
+    })
+    endPeriod!: "ft" | "aet" | "pso";
+
     get result(): "home" | "away" | "draw" | null {
         if (this.status === MatchStatus.COMPLETED) {
             if (this.homeScore > this.awayScore) return "home";
             if (this.homeScore < this.awayScore) return "away";
+            // If draw and it's a penalty shootout, compare penalties
+            if (this.endPeriod === "pso") {
+                if ((this.penaltyHome ?? 0) > (this.penaltyAway ?? 0)) return "home";
+                if ((this.penaltyHome ?? 0) < (this.penaltyAway ?? 0)) return "away";
+            }
             return "draw";
         }
         return null;

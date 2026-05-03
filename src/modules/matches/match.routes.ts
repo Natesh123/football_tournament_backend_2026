@@ -80,7 +80,7 @@ router.get("/", MatchController.getAll);
 router.put("/:id", MatchController.updateMatch);
 router.get("/:id/lineups", MatchController.getMatchLineups);
 router.get("/:id/h2h", MatchController.getMatchH2H);
-router.post("/:id/result", MatchController.updateResult);
+router.patch("/:id/result", MatchController.updateResult);
 router.patch("/:id/schedule", MatchController.updateSchedule);
 router.patch("/:id/live", MatchController.updateLiveState);
 router.get("/:id/stats", validateMatchIdParam, MatchController.getMatchStats);
