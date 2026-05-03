@@ -68,7 +68,7 @@ export class Tournament {
     @Column({ nullable: true })
     shortName?: string;
 
-    @Column({ nullable: true })
+    @Column({ nullable: true, default: '11aside' })
     type?: string;
 
     @Column({ nullable: true })
