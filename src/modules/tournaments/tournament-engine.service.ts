@@ -286,23 +286,31 @@ export class TournamentEngineService {
         }
         console.log("[AutoSchedule] Completed auto-scheduling.");
     }
-
     private async generateGroupsPhase(tournament: Tournament) {
-        const settings = tournament.format?.group_settings;
-        if (!settings) throw new Error("Group settings missing");
+        let settings = tournament.format?.group_settings;
+        if (!settings) {
+            console.log("[TournamentEngine] Group settings missing, creating defaults...");
+            const regCount = tournament.teamRegistrations?.length || 8;
+            settings = {
+                total_teams: regCount,
+                groups_count: Math.max(1, Math.ceil(regCount / 4)),
+                teams_per_group: 4,
+                advancing_teams: 2
+            } as any;
+        }
 
         // Create Stage
         const stage = this.stageRepo.create({
-            format: tournament.format,
+            format: tournament.format!,
             stage_order: 1,
             stage_type: "group",
             stage_name: "Group Stage",
-            teams_count: settings.total_teams
+            teams_count: settings!.total_teams
         });
         await this.stageRepo.save(stage);
 
         // Create Groups
-        const numGroups = settings.groups_count;
+        const numGroups = settings!.groups_count;
         const groups: Group[] = [];
         for (let i = 0; i < numGroups; i++) {
             const groupName = `Group ${String.fromCharCode(65 + i)}`; // A, B, C...
@@ -351,23 +359,25 @@ export class TournamentEngineService {
 
     private async generateKnockoutPhase(tournament: Tournament) {
         let settings = tournament.format?.knockout_settings;
-
-        // Graceful fallback: if no knockout settings exist, derive from team count
         if (!settings) {
-            const teamCount = tournament.teamRegistrations?.length ?? 0;
-            // Round down to nearest power of 2 (minimum 2)
-            const qualifiedTeams = teamCount >= 2
-                ? Math.pow(2, Math.floor(Math.log2(teamCount)))
-                : 2;
-            console.warn(`[generateKnockoutPhase] No knockout_settings found. Defaulting qualified_teams to ${qualifiedTeams}`);
-            settings = { qualified_teams: qualifiedTeams } as any;
+            console.log("[TournamentEngine] Knockout settings missing, creating defaults...");
+            const regCount = tournament.teamRegistrations?.length || 0;
+            // Find largest power of 2 <= regCount
+            let qTeams = regCount > 0 ? Math.pow(2, Math.floor(Math.log2(regCount))) : 2;
+            if (qTeams < 2) qTeams = 2; // minimum
+            
+            settings = {
+                qualified_teams: qTeams,
+                seeding_type: "random",
+                third_place_match: false
+            } as any;
         }
 
         const stageOrder = tournament.format!.format_type === "groups_knockout" ? 2 : 1;
 
         // Create Stage
         const stage = this.stageRepo.create({
-            format: tournament.format,
+            format: tournament.format!,
             stage_order: stageOrder,
             stage_type: "knockout",
             stage_name: "Knockout Stage",

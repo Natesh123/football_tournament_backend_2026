@@ -284,8 +284,7 @@ export const MatchController = {
     async updateSchedule(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            // Note: `events` field removed — events are now stored in match_events table
-            const { venue, matchTime, breakDuration, matchReferees } = req.body;
+            const { venue, matchTime, startTime, breakDuration, matchReferees, referees, status } = req.body;
 
             const matchRepo = AppDataSource.getRepository(Match);
             const match = await matchRepo.findOne({ 
@@ -301,13 +300,23 @@ export const MatchController = {
                 if (!isNaN(parsed.getTime())) {
                     match.startTime = parsed;
                 }
+            } else if (startTime !== undefined && startTime !== null && startTime !== '') {
+                const parsed = new Date(startTime);
+                if (!isNaN(parsed.getTime())) {
+                    match.startTime = parsed;
+                }
             }
             if (breakDuration !== undefined) match.breakDuration = breakDuration;
             if (matchReferees !== undefined) match.matchReferees = matchReferees;
+            if (referees !== undefined) match.referees = referees;
+            
+            if (status !== undefined) match.status = status;
 
             await matchRepo.save(match);
 
-            res.json({ success: true, data: formatMatch(match) });
+            const result = formatMatch(match);
+            emitMatchUpdate(id.toString(), result);
+            res.json({ success: true, data: result });
         } catch (error: any) {
             res.status(500).json({ success: false, message: error.message });
         }
