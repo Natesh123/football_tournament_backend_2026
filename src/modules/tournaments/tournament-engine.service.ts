@@ -29,6 +29,12 @@ export class TournamentEngineService {
             throw new Error("Tournament or format not found");
         }
 
+        const requiredTeams = tournament.maxTeams || 16;
+        const approvedTeams = tournament.teamRegistrations.filter(tr => tr.status === 'approved');
+        if (approvedTeams.length !== requiredTeams) {
+            throw new Error(`Need exactly ${requiredTeams} approved teams before scheduling. Currently have ${approvedTeams.length}.`);
+        }
+
         // Clean slate: delete all existing structure for this tournament
         await this.purgeExistingStructure(parseInt(tournamentId));
 
@@ -89,8 +95,28 @@ export class TournamentEngineService {
     private async generateFromFormatData(tournament: Tournament, formatData: any[]) {
         const teamsMap = new Map<string, Team>();
         for (const reg of tournament.teamRegistrations) {
-            if (reg.team) teamsMap.set(reg.team.name, reg.team);
+            if (reg.team && reg.status === 'approved') teamsMap.set(reg.team.name, reg.team);
         }
+
+        // Track which teams are explicitly assigned
+        const explicitlyAssigned = new Set<string>();
+        for (const phase of formatData) {
+            if (phase.kind === 'group' && phase.groups) {
+                for (const group of phase.groups) {
+                    for (const slot of group.slots) {
+                        if (slot.label !== 'EMPTY SLOT') explicitlyAssigned.add(slot.label);
+                    }
+                }
+            } else if (phase.kind === 'knockout' && phase.rounds && phase.rounds.length > 0) {
+                for (const match of phase.rounds[0].matches) {
+                    if (match.home !== 'EMPTY SLOT') explicitlyAssigned.add(match.home);
+                    if (match.away !== 'EMPTY SLOT') explicitlyAssigned.add(match.away);
+                }
+            }
+        }
+
+        let unassignedTeams = Array.from(teamsMap.values()).filter(t => !explicitlyAssigned.has(t.name));
+        unassignedTeams.sort(() => Math.random() - 0.5);
 
         let stageOrder = 1;
         for (const phase of formatData) {
@@ -118,7 +144,11 @@ export class TournamentEngineService {
                     // Map slots to actual teams
                     const assignedTeams: Team[] = [];
                     for (const slot of groupData.slots) {
-                        const team = teamsMap.get(slot.label);
+                        let team = teamsMap.get(slot.label);
+                        if (!team && slot.label === 'EMPTY SLOT' && unassignedTeams.length > 0) {
+                            team = unassignedTeams.pop();
+                            if (team) slot.label = team.name;
+                        }
                         if (team) {
                             assignedTeams.push(team);
                             const groupTeam = this.groupTeamRepo.create({
@@ -160,10 +190,20 @@ export class TournamentEngineService {
                             startTime: new Date()
                         });
 
-                        const homeTeam = teamsMap.get(matchData.home);
+                        const homeLabel = matchData.home;
+                        let homeTeam = teamsMap.get(homeLabel);
+                        if (!homeTeam && homeLabel === 'EMPTY SLOT' && unassignedTeams.length > 0) {
+                            homeTeam = unassignedTeams.pop();
+                            if (homeTeam) matchData.home = homeTeam.name;
+                        }
                         if (homeTeam) match.homeTeam = homeTeam;
 
-                        const awayTeam = teamsMap.get(matchData.away);
+                        const awayLabel = matchData.away;
+                        let awayTeam = teamsMap.get(awayLabel);
+                        if (!awayTeam && awayLabel === 'EMPTY SLOT' && unassignedTeams.length > 0) {
+                            awayTeam = unassignedTeams.pop();
+                            if (awayTeam) matchData.away = awayTeam.name;
+                        }
                         if (awayTeam) match.awayTeam = awayTeam;
 
                         await this.matchRepo.save(match);
@@ -174,6 +214,12 @@ export class TournamentEngineService {
                     roundIdx++;
                 }
             }
+        }
+
+        // Save the updated format configuration with dynamically assigned teams
+        if (tournament.format) {
+            tournament.format.format_data = formatData;
+            await this.formatRepo.save(tournament.format);
         }
     }
 

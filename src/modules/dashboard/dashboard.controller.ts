@@ -4,7 +4,45 @@ import { Team } from "../teams/team.entity";
 import { TeamMember, TeamMemberRole } from "../teams/team-member.entity";
 import { Match, MatchStatus } from "../matches/match.entity";
 import { MatchEvent, MatchEventType } from "../matches/match-event.entity";
+import { MatchSource } from "../matches/match-source.entity";
 import { Between } from "typeorm";
+
+async function getDynamicTeamName(matchRepo: any, m: any, side: "home" | "away"): Promise<string> {
+    const team = side === "home" ? m.homeTeam : m.awayTeam;
+    if (team?.name) return team.name;
+
+    const source = m.matchSources?.find((s: any) => s.side === side);
+    if (source) {
+        if (source.source_type === "match_winner") {
+            try {
+                const prevMatch = await matchRepo.findOne({ 
+                    where: { id: parseInt(source.source_value) },
+                    relations: ["stage"]
+                });
+                if (prevMatch) {
+                    const teamsCount = prevMatch.stage?.teams_count || 16;
+                    const currentTeams = teamsCount / Math.pow(2, (prevMatch.round || 1) - 1);
+                    let abbr = `R${currentTeams}-`;
+                    if (currentTeams === 2) abbr = "F";
+                    else if (currentTeams === 4) abbr = "SF";
+                    else if (currentTeams === 8) abbr = "QF";
+                    return `Winner of ${abbr}${prevMatch.bracketPosition || ''}`;
+                }
+            } catch (e) {
+                // ignore
+            }
+            return `Winner of Match`;
+        } else if (source.source_type === "group_rank") {
+            return source.source_value; // e.g. "1st Group A"
+        }
+    }
+    
+    if (m.stage?.stage_type === "knockout") {
+        return `Winner of Match ${m.bracketPosition || ''}`.trim();
+    }
+    
+    return "TBD";
+}
 
 export const DashboardController = {
     /* ─── Platform Stats ─────────────────────────────────────────────── */
@@ -73,6 +111,7 @@ export const DashboardController = {
                 .leftJoinAndSelect("match.awayTeam", "awayTeam")
                 .leftJoinAndSelect("match.tournament", "tournament")
                 .leftJoinAndSelect("match.stage", "stage")
+                .leftJoinAndSelect("match.matchSources", "matchSources")
                 .where("match.status = :status", { status: MatchStatus.LIVE });
 
             const userRole = req.user?.role?.toLowerCase() || '';
@@ -98,8 +137,8 @@ export const DashboardController = {
                 });
                 return {
                     id: m.id,
-                    homeTeam: m.homeTeam?.name ?? "TBD",
-                    awayTeam: m.awayTeam?.name ?? "TBD",
+                    homeTeam: await getDynamicTeamName(matchRepo, m, "home"),
+                    awayTeam: await getDynamicTeamName(matchRepo, m, "away"),
                     homeScore: m.homeScore,
                     awayScore: m.awayScore,
                     liveMinute: m.live_minute ?? 0,
@@ -131,6 +170,8 @@ export const DashboardController = {
                 .leftJoinAndSelect("match.homeTeam", "homeTeam")
                 .leftJoinAndSelect("match.awayTeam", "awayTeam")
                 .leftJoinAndSelect("match.tournament", "tournament")
+                .leftJoinAndSelect("match.stage", "stage")
+                .leftJoinAndSelect("match.matchSources", "matchSources")
                 .where("match.status = :status", { status: MatchStatus.SCHEDULED })
                 .andWhere("match.startTime >= :now", { now });
 
@@ -154,12 +195,16 @@ export const DashboardController = {
                 const d = new Date(m.startTime);
                 const dateKey = d.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }).toUpperCase();
                 if (!groupsMap.has(dateKey)) groupsMap.set(dateKey, []);
+                
+                const homeTeamName = await getDynamicTeamName(matchRepo, m, "home");
+                const awayTeamName = await getDynamicTeamName(matchRepo, m, "away");
+                
                 groupsMap.get(dateKey)!.push({
                     id: m.id,
                     date: dateKey,
                     time: d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
-                    homeTeam: m.homeTeam?.name ?? "TBD",
-                    awayTeam: m.awayTeam?.name ?? "TBD",
+                    homeTeam: homeTeamName,
+                    awayTeam: awayTeamName,
                     venue: m.venue ?? "",
                     tournament: m.tournament?.name ?? "",
                     tournamentId: m.tournament?.id,
@@ -185,6 +230,8 @@ export const DashboardController = {
                 .leftJoinAndSelect("match.homeTeam", "homeTeam")
                 .leftJoinAndSelect("match.awayTeam", "awayTeam")
                 .leftJoinAndSelect("match.tournament", "tournament")
+                .leftJoinAndSelect("match.stage", "stage")
+                .leftJoinAndSelect("match.matchSources", "matchSources")
                 .where("match.status = :status", { status: MatchStatus.COMPLETED });
 
             const userRole = req.user?.role?.toLowerCase() || '';
@@ -207,15 +254,18 @@ export const DashboardController = {
                 const dateKey = d.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }).toUpperCase();
                 if (!groupsMap.has(dateKey)) groupsMap.set(dateKey, []);
 
+                const homeTeamName = await getDynamicTeamName(matchRepo, m, "home");
+                const awayTeamName = await getDynamicTeamName(matchRepo, m, "away");
+
                 let winner = "Draw";
-                if (m.homeScore > m.awayScore) winner = m.homeTeam?.name ?? "Home";
-                else if (m.awayScore > m.homeScore) winner = m.awayTeam?.name ?? "Away";
+                if (m.homeScore > m.awayScore) winner = homeTeamName;
+                else if (m.awayScore > m.homeScore) winner = awayTeamName;
 
                 groupsMap.get(dateKey)!.push({
                     id: m.id,
                     date: dateKey,
-                    homeTeam: m.homeTeam?.name ?? "TBD",
-                    awayTeam: m.awayTeam?.name ?? "TBD",
+                    homeTeam: homeTeamName,
+                    awayTeam: awayTeamName,
                     score: `${m.homeScore} - ${m.awayScore}`,
                     status: "FT",
                     venue: m.venue ?? "",
