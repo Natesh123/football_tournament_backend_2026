@@ -78,7 +78,13 @@ export async function deletePermission(req: Request, res: Response) {
 
 export async function changePassword(req: Request, res: Response) {
     try {
-        const { userId, oldPassword, newPassword } = req.body;
+        const userId = Number(req.body.userId);
+        const { oldPassword, newPassword } = req.body;
+        
+        if (isNaN(userId)) {
+            throw new Error("Invalid user ID");
+        }
+
         const result = await settingsService.changePassword(userId, oldPassword, newPassword);
         res.json({ message: "Password updated successfully" });
     } catch (err: any) {
