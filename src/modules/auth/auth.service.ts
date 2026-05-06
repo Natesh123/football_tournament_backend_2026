@@ -8,6 +8,7 @@ import { generateOTP } from "../../utils/otp.util";
 import { generateToken, verifyToken } from "../../utils/jwt.util";
 import { sendOTP } from "../../utils/email.util";
 import { Permission } from "../../entities/permission.entity";
+import { UserRole } from "../../entities/role.entity";
 
 export async function registerUser(email: string, password: string, user_name: string, phone_number: string) {
     const userRepo = AppDataSource.getRepository(User);
