@@ -5,31 +5,42 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 const getTransporter = () => {
+    const user = (process.env.SMTP_USER || "").trim();
+    const pass = (process.env.SMTP_PASS || "").replace(/\s/g, "");
+    const host = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
+    const port = parseInt((process.env.SMTP_PORT || "465").trim());
+    const secure = (process.env.SMTP_SECURE || "true").trim() === "true";
+    const debug = process.env.SMTP_DEBUG === "true";
+
     // If SMTP is not fully configured, return null to signify console-only mode
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS || 
-        process.env.SMTP_PASS === 'YOUR_APP_PASSWORD_HERE' || 
-        process.env.SMTP_PASS === 'YOUR_16_CHAR_APP_PASSWORD_HERE') {
+    if (!user || !pass || pass === 'YOUR_APP_PASSWORD_HERE') {
         console.warn("[SMTP] Email credentials not configured. Emails will be logged to console only.");
         return null;
     }
 
-    const config: any = {
-        host: (process.env.SMTP_HOST || "smtp.gmail.com").trim(),
-        port: parseInt((process.env.SMTP_PORT || "587").trim()),
-        secure: (process.env.SMTP_SECURE || "false").trim() === "true",
-        auth: {
-            user: (process.env.SMTP_USER || "").trim(),
-            pass: (process.env.SMTP_PASS || "").replace(/\s/g, ""),
-        },
-    };
+    console.log(`[SMTP] Initializing with Host: ${host}, Port: ${port}, Secure: ${secure}, User: ${user}`);
+    if (debug) console.log("[SMTP] Debug mode enabled");
 
-    // Optimization for Gmail
-    if (config.host.includes("gmail.com")) {
-        return nodemailer.createTransport({
-            service: "gmail",
-            auth: config.auth,
-        });
-    }
+    const config: any = {
+        host,
+        port,
+        secure,
+        pool: true, // Use pooling for production efficiency
+        maxConnections: 5,
+        maxMessages: 100,
+        auth: {
+            user,
+            pass,
+        },
+        tls: {
+            rejectUnauthorized: false // Better compatibility for some servers
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 30000,
+        debug,
+        logger: debug,
+    };
 
     return nodemailer.createTransport(config);
 };
