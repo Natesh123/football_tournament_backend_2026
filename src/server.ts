@@ -13,6 +13,16 @@ async function startServer(retries = 0) {
         await AppDataSource.initialize();
         console.log("Data Source has been initialized!");
 
+        // Verify SMTP connection on startup
+        const { verifySMTPConnection } = require("./utils/email.util");
+        verifySMTPConnection().then((result: any) => {
+            if (result.success) {
+                console.log("[SMTP] Service ready for production.");
+            } else {
+                console.warn("[SMTP] Service warning:", result.error || result.message);
+            }
+        });
+
         const server = app.listen(Number(PORT), "0.0.0.0", () => {
             console.log(`Server is running on http://localhost:${PORT}`);
             console.log("Press Ctrl+C to stop the server");
