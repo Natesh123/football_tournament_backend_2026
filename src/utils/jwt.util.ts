@@ -1,16 +1,18 @@
 // @ts-ignore
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-    console.warn("WARNING: JWT_SECRET environment variable is not set! Using default key (unsafe).");
+export function getJwtSecret(): string {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+        throw new Error("JWT_SECRET environment variable is not set. Refusing to sign/verify tokens.");
+    }
+    return secret;
 }
-const SECRET_KEY = JWT_SECRET || "default_unsafe_secret";
 
 export function generateToken(payload: any) {
-    return jwt.sign(payload, SECRET_KEY, { expiresIn: "1d" });
+    return jwt.sign(payload, getJwtSecret(), { expiresIn: "1d" });
 }
 
 export function verifyToken(token: string) {
-    return jwt.verify(token, SECRET_KEY);
+    return jwt.verify(token, getJwtSecret());
 }

@@ -187,3 +187,83 @@ export async function sendPasswordEmail(email: string, password: string) {
         return { success: false, error: error.message };
     }
 }
+
+export async function sendPasswordResetEmail(email: string, resetLink: string) {
+    const subject = "Password Reset Request — ATB Sports";
+
+    try {
+        if (!transporter) {
+            console.log(`\n=== PASSWORD RESET LINK (SMTP not configured) ===`);
+            console.log(`To: ${email}`);
+            console.log(`Link: ${resetLink}`);
+            console.log(`=================================================\n`);
+            return { success: true, message: "Logged to console (SMTP not configured)" };
+        }
+
+        await transporter.sendMail({
+            from: `"ATB Sports" <${process.env.SMTP_USER}>`,
+            to: email,
+            subject,
+            html: `
+                <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0c0c0c;color:#fff;border:1px solid #d4af37;border-radius:12px;padding:32px;">
+                    <h2 style="color:#d4af37;margin-top:0;">Password Reset</h2>
+                    <p style="color:#ccc;font-size:15px;">You requested a password reset for your ATB Sports account. Click the button below to set a new password. This link expires in 30 minutes.</p>
+                    <div style="text-align:center;margin:30px 0;">
+                        <a href="${resetLink}" style="display:inline-block;padding:14px 32px;background:#d4af37;color:#000;font-weight:bold;text-decoration:none;border-radius:10px;font-size:15px;">Reset My Password</a>
+                    </div>
+                    <p style="color:#888;font-size:13px;">If you did not request this, you can safely ignore this email.</p>
+                    <p style="font-size:11px;color:#555;margin-top:24px;">&copy; 2026 ATB Sports Platform</p>
+                </div>
+            `,
+        });
+
+        return { success: true };
+    } catch (error: any) {
+        console.log(`\n=== PASSWORD RESET EMAIL FALLBACK ===`);
+        console.log(`To: ${email}`);
+        console.log(`Link: ${resetLink}`);
+        console.log(`Error: ${error.message}`);
+        console.log(`=====================================\n`);
+        return { success: false, error: error.message };
+    }
+}
+
+export async function sendContactEmail(data: { name: string; email: string; subject: string; message: string }) {
+    const adminEmail = process.env.SMTP_USER || process.env.CONTACT_EMAIL;
+    const subject = `[ATB Sports Contact] ${data.subject}`;
+
+    try {
+        if (!transporter || !adminEmail) {
+            console.log(`\n=== CONTACT FORM SUBMISSION ===`);
+            console.log(`From: ${data.name} <${data.email}>`);
+            console.log(`Subject: ${data.subject}`);
+            console.log(`Message: ${data.message}`);
+            console.log(`===============================\n`);
+            return { success: true, message: "Logged to console (SMTP not configured)" };
+        }
+
+        await transporter.sendMail({
+            from: `"ATB Sports Contact" <${adminEmail}>`,
+            to: adminEmail,
+            replyTo: data.email,
+            subject,
+            html: `
+                <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0c0c0c;color:#fff;border:1px solid #d4af37;border-radius:12px;padding:32px;">
+                    <h2 style="color:#d4af37;margin-top:0;">New Contact Message</h2>
+                    <table style="width:100%;border-collapse:collapse;font-size:14px;color:#ccc;">
+                        <tr><td style="padding:8px 0;color:#888;width:80px;">Name</td><td style="padding:8px 0;">${data.name}</td></tr>
+                        <tr><td style="padding:8px 0;color:#888;">Email</td><td style="padding:8px 0;"><a href="mailto:${data.email}" style="color:#d4af37;">${data.email}</a></td></tr>
+                        <tr><td style="padding:8px 0;color:#888;">Subject</td><td style="padding:8px 0;">${data.subject}</td></tr>
+                    </table>
+                    <div style="margin-top:20px;padding:16px;background:#1a1a1a;border-left:3px solid #d4af37;border-radius:4px;color:#ddd;white-space:pre-wrap;">${data.message}</div>
+                    <p style="font-size:11px;color:#555;margin-top:24px;">&copy; 2026 ATB Sports Platform</p>
+                </div>
+            `,
+        });
+
+        return { success: true };
+    } catch (error: any) {
+        console.error("Contact email failed:", error.message);
+        return { success: false, error: error.message };
+    }
+}

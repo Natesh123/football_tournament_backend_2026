@@ -6,14 +6,37 @@ import { Permission } from "../../entities/permission.entity";
 // @ts-ignore
 import * as bcrypt from "bcrypt";
 
+// Default access granted to a freshly created role. Mirrors a basic organizer
+// (their own dashboard/tournaments/teams, no settings) so the role is usable the
+// moment it's assigned; the admin then fine-tunes it in Settings → Permissions.
+const DEFAULT_ROLE_ACCESS = {
+    can_dashboard: true,
+    can_tournaments: true,
+    can_teams: true,
+    view_profile: true,
+    can_settings: false,
+    can_roles: false,
+    can_users: false,
+    can_permissions: false,
+};
+
 export async function createRole(name: string) {
     const roleRepository = AppDataSource.getRepository(UserRole);
+    const permissionRepository = AppDataSource.getRepository(Permission);
+
     const existingRole = await roleRepository.findOne({ where: { name } });
     if (existingRole) {
         throw new Error("Role already exists");
     }
-    const role = roleRepository.create({ name });
-    return await roleRepository.save(role);
+    const role = await roleRepository.save(roleRepository.create({ name }));
+
+    // Auto-provision a permissions row so the new role is immediately listed and
+    // controllable on the Permissions page (and assigned users have defined access).
+    await permissionRepository.save(
+        permissionRepository.create({ roleId: role.id, module_access: { ...DEFAULT_ROLE_ACCESS } })
+    );
+
+    return role;
 }
 
 export async function getAllRoles() {

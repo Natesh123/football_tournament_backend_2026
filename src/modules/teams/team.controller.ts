@@ -10,7 +10,9 @@ export class TeamController {
     getAll = async (req: Request, res: Response) => {
         try {
             const search = req.query.search as string;
-            const teams = await this.teamService.getAll(search);
+            // The registration picker requests the full shared pool via ?all=true.
+            const includeAllPool = req.query.all === "true";
+            const teams = await this.teamService.getAll(search, (req as any).user, includeAllPool);
             res.json(teams);
         } catch (error) {
             res.status(500).json({ message: "Failed to fetch teams", error });
@@ -97,6 +99,41 @@ export class TeamController {
             res.json({ message: "Photo deleted" });
         } catch (error: any) {
             res.status(500).json({ message: "Failed to delete photo", error: error?.message });
+        }
+    };
+
+    getStats = async (req: Request, res: Response) => {
+        try {
+            const team = await this.teamService.getById(req.params.id as string);
+            if (!team) {
+                return res.status(404).json({ message: "Team not found" });
+            }
+            const stats = await this.teamService.getStats(req.params.id as string);
+            res.json(stats);
+        } catch (error: any) {
+            res.status(500).json({ message: "Failed to fetch team stats", error: error?.message });
+        }
+    };
+
+    delete = async (req: Request, res: Response) => {
+        try {
+            const teamId = req.params.id as string;
+            const team = await this.teamService.getById(teamId);
+            if (!team) {
+                return res.status(404).json({ message: "Team not found" });
+            }
+            await this.teamService.delete(teamId);
+
+            // Best-effort cleanup of the team's uploaded files
+            const teamDir = path.join(process.cwd(), "uploads", "teams", teamId);
+            if (fs.existsSync(teamDir)) {
+                fs.rmSync(teamDir, { recursive: true, force: true });
+            }
+
+            res.json({ message: "Team deleted" });
+        } catch (error: any) {
+            console.error("Delete team error:", error);
+            res.status(500).json({ message: "Failed to delete team", error: error?.message ?? String(error) });
         }
     };
 

@@ -35,3 +35,15 @@ coverage/
 .sass-cache/
 connect.lock
 *.log
+
+# User-uploaded content
+uploads/
+
+# Local dev/debug scripts
+test_db.js
+test-login.js
+test-smtp.ts
+drop_column.js
+drop-formats.ts
+add-owner.ts
+check_db_sponsors.ts

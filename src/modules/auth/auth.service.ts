@@ -1,12 +1,13 @@
 // @ts-ignore
 import bcrypt from "bcrypt";
+import crypto from "crypto";
 import { AppDataSource } from "../../config/data-source";
 import { User } from "../../entities/user.entity";
 import { UserOtp } from "../../entities/otp.entity";
 import { PendingUser } from "../../entities/pending_user.entity";
 import { generateOTP } from "../../utils/otp.util";
 import { generateToken, verifyToken } from "../../utils/jwt.util";
-import { sendOTP } from "../../utils/email.util";
+import { sendOTP, sendPasswordResetEmail } from "../../utils/email.util";
 import { Permission } from "../../entities/permission.entity";
 import { UserRole } from "../../entities/role.entity";
 
@@ -247,5 +248,58 @@ export async function resendOtpService(email: string) {
     await sendOTP(email, otp, "registration");
 
     return { message: "OTP resent successfully" };
+}
+
+export async function requestPasswordReset(email: string) {
+    const userRepo = AppDataSource.getRepository(User);
+    const otpRepo = AppDataSource.getRepository(UserOtp);
+
+    const user = await userRepo.findOne({ where: { email } });
+    // Always return success to avoid email enumeration
+    if (!user) return { message: "If that email exists, a reset link has been sent." };
+
+    // Generate a cryptographically secure token
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex");
+
+    // Invalidate any existing reset tokens for this user (reuse user_id + 30-min expiry)
+    await otpRepo.delete({ user_id: user.id, is_used: false });
+
+    const entry = otpRepo.create({
+        user_id: user.id,
+        otp: hashedToken,
+        expires_at: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
+        is_used: false,
+    });
+    await otpRepo.save(entry);
+
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:4200";
+    const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
+
+    await sendPasswordResetEmail(email, resetLink);
+
+    return { message: "If that email exists, a reset link has been sent." };
+}
+
+export async function resetPassword(rawToken: string, newPassword: string) {
+    const userRepo = AppDataSource.getRepository(User);
+    const otpRepo = AppDataSource.getRepository(UserOtp);
+
+    const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex");
+
+    const entry = await otpRepo.findOne({ where: { otp: hashedToken, is_used: false } });
+    if (!entry) throw new Error("Invalid or expired reset token.");
+    if (entry.expires_at < new Date()) throw new Error("Reset token has expired. Please request a new one.");
+
+    const user = await userRepo.findOne({ where: { id: entry.user_id } });
+    if (!user) throw new Error("User not found.");
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await userRepo.save(user);
+
+    entry.is_used = true;
+    await otpRepo.save(entry);
+
+    return { message: "Password updated successfully." };
 }
 

@@ -5,8 +5,102 @@ import { emitMatchUpdate } from "../../socket";
 import { TeamMember } from "../teams/team-member.entity";
 
 import { GroupTeam } from "../tournaments/group-team.entity";
+import { Group } from "../tournaments/group.entity";
+import { Team } from "../teams/team.entity";
 import { MatchSource } from "./match-source.entity";
 import { MatchEvent, MatchEventType } from "./match-event.entity";
+
+/**
+ * Determines the winning team of a completed match, honouring penalty
+ * shootouts. Returns undefined for a genuine draw (no progression).
+ */
+function resolveWinner(match: Match): Team | undefined {
+    const r = match.result; // PSO-aware getter on the Match entity
+    if (r === "home") return match.homeTeam ?? undefined;
+    if (r === "away") return match.awayTeam ?? undefined;
+    return undefined;
+}
+
+/**
+ * Applies (sign = +1) or reverts (sign = -1) the score effect of a scoring
+ * event. GOAL/PENALTY credit the event's own side; OWN_GOAL credits the
+ * opposite side. Scores are clamped at 0.
+ */
+function applyScoreDelta(
+    match: Match,
+    ev: { type: MatchEventType; teamSide?: string | null; team?: { id: number } | null },
+    sign: number
+): void {
+    const isHome = ev.teamSide === "home" || (!!ev.team && !!match.homeTeam && ev.team.id === match.homeTeam.id);
+    const isAway = ev.teamSide === "away" || (!!ev.team && !!match.awayTeam && ev.team.id === match.awayTeam.id);
+    const credit = (side: "home" | "away") => {
+        if (side === "home") match.homeScore = Math.max(0, (match.homeScore || 0) + sign);
+        else match.awayScore = Math.max(0, (match.awayScore || 0) + sign);
+    };
+    if (ev.type === MatchEventType.GOAL || ev.type === MatchEventType.PENALTY) {
+        if (isHome) credit("home");
+        else if (isAway) credit("away");
+    } else if (ev.type === MatchEventType.OWN_GOAL) {
+        if (isHome) credit("away");
+        else if (isAway) credit("home");
+    }
+}
+
+/**
+ * Once every group-stage match of a tournament is complete, resolves any
+ * pending knockout slots seeded as "<groupName>#<rank>" into the actual
+ * qualifying team from the final group standings. Idempotent.
+ */
+async function resolveGroupQualifiers(tournamentId: number): Promise<void> {
+    const matchRepo = AppDataSource.getRepository(Match);
+    const matchSourceRepo = AppDataSource.getRepository(MatchSource);
+    const groupRepo = AppDataSource.getRepository(Group);
+    const groupTeamRepo = AppDataSource.getRepository(GroupTeam);
+
+    // Only resolve once the entire group stage is complete.
+    const groupMatches = await matchRepo.find({
+        where: { tournament: { id: tournamentId }, stage: { stage_type: "group" } },
+        relations: ["stage"]
+    });
+    if (groupMatches.length === 0) return;
+    if (groupMatches.some(m => m.status !== MatchStatus.COMPLETED)) return;
+
+    const sources = await matchSourceRepo.find({
+        where: { source_type: "group_rank" },
+        relations: ["match", "match.tournament"]
+    });
+    const pending = sources.filter(s =>
+        s.match?.tournament?.id === tournamentId &&
+        s.source_value &&
+        s.source_value !== "TBD"
+    );
+    if (pending.length === 0) return;
+
+    const groups = await groupRepo.find({ where: { tournament: { id: tournamentId } } });
+
+    for (const source of pending) {
+        const [groupName, rankStr] = source.source_value.split("#");
+        const rank = parseInt(rankStr, 10);
+        if (!groupName || !Number.isInteger(rank) || rank < 1) continue;
+
+        const group = groups.find(g => g.group_name === groupName);
+        if (!group) continue;
+
+        const standings = await groupTeamRepo.find({
+            where: { group: { id: group.id } },
+            relations: ["team"],
+            order: { position: "ASC" }
+        });
+        const qualifier = standings[rank - 1]?.team;
+        if (!qualifier) continue;
+
+        const target = await matchRepo.findOne({ where: { id: source.match.id } });
+        if (!target) continue;
+        if (source.side === "home") target.homeTeam = qualifier;
+        else if (source.side === "away") target.awayTeam = qualifier;
+        await matchRepo.save(target);
+    }
+}
 
 const formatMatch = (m: Match) => ({ 
     ...m, 
@@ -89,6 +183,13 @@ async function finishMatch(match: Match): Promise<void> {
         await recalculateGroupStandings(match.group.id);
     }
 
+    // 1b. If a group match finished, try to promote qualifiers into the knockout bracket
+    if (match.group) {
+        const tId = match.tournament?.id
+            ?? (await matchRepo.findOne({ where: { id: match.id }, relations: ["tournament"] }))?.tournament?.id;
+        if (tId) await resolveGroupQualifiers(tId);
+    }
+
     // 2. Handle knockout progression if applicable
     // We fetch relations again if they might be missing
     const fullMatch = await matchRepo.findOne({
@@ -102,7 +203,7 @@ async function finishMatch(match: Match): Promise<void> {
             relations: ["match"]
         });
 
-        const winner = fullMatch.homeScore > fullMatch.awayScore ? fullMatch.homeTeam : fullMatch.awayTeam;
+        const winner = resolveWinner(fullMatch);
         if (winner) {
             for (const source of pendingSources) {
                 const targetMatch = await matchRepo.findOne({ where: { id: source.match.id } });
@@ -257,11 +358,6 @@ export const MatchController = {
                     match.periodStartedAt = new Date();
                 }
                 match.status = updateData.status;
-
-                // If transitioning to completed, trigger finish logic
-                if (updateData.status === MatchStatus.COMPLETED) {
-                    await finishMatch(match);
-                }
             }
             if (updateData.matchReferees !== undefined) match.matchReferees = updateData.matchReferees;
             if (updateData.breakDuration !== undefined) match.breakDuration = updateData.breakDuration;
@@ -272,6 +368,12 @@ export const MatchController = {
             if (updateData.awayLineup !== undefined) match.awayLineup = updateData.awayLineup;
 
             await matchRepo.save(match);
+
+            // Finish logic must run after save: it re-queries the DB for completed
+            // matches, so the new status has to be persisted first
+            if (updateData.status === MatchStatus.COMPLETED) {
+                await finishMatch(match);
+            }
 
             res.status(200).json({ success: true, data: formatMatch(match), message: "Match updated successfully" });
             emitMatchUpdate(id.toString(), formatMatch(match));
@@ -294,7 +396,13 @@ export const MatchController = {
 
             if (!match) return res.status(404).json({ success: false, message: "Match not found" });
 
-            if (venue !== undefined) match.venue = venue;
+            // A scheduled match must keep a venue — reject attempts to clear it
+            if (venue !== undefined) {
+                if (venue === null || String(venue).trim() === '') {
+                    return res.status(400).json({ success: false, message: "Venue is required to schedule a match. Please select a venue." });
+                }
+                match.venue = String(venue).trim();
+            }
             if (matchTime !== undefined && matchTime !== null && matchTime !== '') {
                 const parsed = new Date(matchTime);
                 if (!isNaN(parsed.getTime())) {
@@ -667,20 +775,34 @@ export const MatchController = {
 
     async updateMatchEvent(req: Request, res: Response) {
         try {
-            const { eventId } = req.params;
+            const { id, eventId } = req.params;
             const updateData = req.body;
             const eventRepo = AppDataSource.getRepository(MatchEvent);
-            
-            const event = await eventRepo.findOne({ where: { id: Number(eventId) } });
+            const matchRepo = AppDataSource.getRepository(Match);
+
+            const event = await eventRepo.findOne({ where: { id: Number(eventId) }, relations: ["team"] });
             if (!event) return res.status(404).json({ success: false, message: "Event not found" });
 
+            const match = await matchRepo.findOne({ where: { id: Number(id) }, relations: ["homeTeam", "awayTeam"] });
+
+            // Snapshot the old scoring effect so it can be reverted after the edit
+            const oldSnapshot = { type: event.type, teamSide: event.teamSide, team: event.team };
+
             const { team, teamId, ...otherData } = updateData;
-            
+
             if (team) event.teamSide = team as any;
             if (teamId) event.team = { id: Number(teamId) } as any;
-            
+
             Object.assign(event, otherData);
             await eventRepo.save(event);
+
+            // Re-sync the match score: revert the old effect, then apply the new one
+            if (match) {
+                applyScoreDelta(match, oldSnapshot, -1);
+                applyScoreDelta(match, { type: event.type, teamSide: event.teamSide, team: event.team }, +1);
+                await matchRepo.save(match);
+                emitMatchUpdate(id.toString(), formatMatch(match));
+            }
 
             res.json({ success: true, data: event });
         } catch (error: any) {
@@ -756,15 +878,18 @@ export const MatchController = {
                 await recalculateGroupStandings(match.group.id);
             }
 
-            // Propagate winner to knockout next round
+            // If a group match ended, try to promote qualifiers into the knockout bracket
+            if (match.group && match.tournament) {
+                await resolveGroupQualifiers(match.tournament.id);
+            }
+
+            // Propagate winner to knockout next round (PSO-aware; no advance on a true draw)
             if (match.stage && match.stage.stage_type === "knockout") {
-                const homeScore = match.homeScore ?? 0;
-                const awayScore = match.awayScore ?? 0;
                 const pendingSources = await matchSourceRepo.find({
                     where: { source_type: "match_winner", source_value: match.id.toString() },
                     relations: ["match"]
                 });
-                const winner = homeScore > awayScore ? match.homeTeam : match.awayTeam;
+                const winner = resolveWinner(match);
                 if (winner) {
                     for (const source of pendingSources) {
                         const targetMatch = await matchRepo.findOne({ where: { id: source.match.id } });
@@ -787,10 +912,10 @@ export const MatchController = {
     async updateLiveState(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            const { homeScore, awayScore, live_minute, match_period } = req.body;
+            const { homeScore, awayScore, live_minute, match_period, addedMinutes, penaltyShootout } = req.body;
 
             const matchRepo = AppDataSource.getRepository(Match);
-            const match = await matchRepo.findOne({ 
+            const match = await matchRepo.findOne({
                 where: { id: Number(id) },
                 relations: ["homeTeam", "awayTeam", "group", "stage", "tournament", "tournament.rules"]
             });
@@ -809,6 +934,20 @@ export const MatchController = {
             if (match_period !== undefined) {
                 match.match_period = match_period;
                 match.periodStartedAt = new Date();
+            }
+
+            // Referee added/stoppage time (null/0 clears it)
+            if (addedMinutes !== undefined) {
+                match.addedMinutes = addedMinutes === null ? undefined : Number(addedMinutes);
+            }
+
+            // Penalty shootout: store the kick log and recompute the tally from it
+            if (penaltyShootout !== undefined) {
+                const kicks: any[] = Array.isArray(penaltyShootout?.kicks) ? penaltyShootout.kicks : [];
+                match.penaltyShootout = { kicks };
+                match.penaltyHome = kicks.filter(k => k.team === "home" && k.scored).length;
+                match.penaltyAway = kicks.filter(k => k.team === "away" && k.scored).length;
+                match.endPeriod = "pso";
             }
 
             await matchRepo.save(match);

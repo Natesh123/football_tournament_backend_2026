@@ -11,7 +11,9 @@
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/config/data-source.ts",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/config/data-source.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/config/data-source.ts",
-    "migrate": "npm run migration:run"
+    "migrate": "npm run migration:run",
+    "seed:roles": "ts-node src/scripts/seed_roles.ts",
+    "promote": "ts-node src/scripts/promote_user.ts"
   },
   "repository": {
     "type": "git",
@@ -32,6 +34,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
     "mysql2": "^3.16.3",

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
-import { verifyToken } from "../utils/jwt.util";
+import jwt from "jsonwebtoken";
+import { getJwtSecret } from "../utils/jwt.util";
 
 export interface AuthRequest extends Request {
     user?: any;
@@ -10,7 +11,7 @@ export function authGuard(req: AuthRequest, res: Response, next: NextFunction) {
     if (!token) return res.status(401).json({ error: "No token" });
 
     try {
-        req.user = verifyToken(token);
+        req.user = jwt.verify(token, getJwtSecret());
         next();
     } catch {
         res.status(401).json({ error: "Invalid token" });
