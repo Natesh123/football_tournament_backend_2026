@@ -26,6 +26,13 @@ export class TeamMemberService {
         return this.memberRepository.save(member);
     }
 
+    async update(id: string, data: Partial<TeamMember>) {
+        // Strip relations / server-managed fields so they can't be mutated via a plain update
+        const { team, id: _id, createdAt, updatedAt, ...safe } = data as any;
+        await this.memberRepository.update(parseInt(id), safe);
+        return this.memberRepository.findOne({ where: { id: parseInt(id) } });
+    }
+
     async delete(id: string) {
         return this.memberRepository.delete(id);
     }

@@ -1,11 +1,13 @@
 import { AppDataSource } from "../../config/data-source";
 import { Tournament, TournamentStatus } from "../tournaments/tournament.entity";
+import { TournamentTeam } from "../tournaments/tournament-team.entity";
 import { Team } from "../teams/team.entity";
 import { TeamMember, TeamMemberRole } from "../teams/team-member.entity";
 import { Match, MatchStatus } from "../matches/match.entity";
 import { MatchEvent, MatchEventType } from "../matches/match-event.entity";
 import { MatchSource } from "../matches/match-source.entity";
-import { Between } from "typeorm";
+import { Between, In } from "typeorm";
+import { isAdminUser } from "../auth/auth.middleware";
 
 async function getDynamicTeamName(matchRepo: any, m: any, side: "home" | "away"): Promise<string> {
     const team = side === "home" ? m.homeTeam : m.awayTeam;
@@ -50,6 +52,7 @@ export const DashboardController = {
         try {
             const tournamentRepo = AppDataSource.getRepository(Tournament);
             const teamRepo = AppDataSource.getRepository(Team);
+            const tournamentTeamRepo = AppDataSource.getRepository(TournamentTeam);
             const memberRepo = AppDataSource.getRepository(TeamMember);
             const matchRepo = AppDataSource.getRepository(Match);
 
@@ -57,6 +60,55 @@ export const DashboardController = {
             todayStart.setHours(0, 0, 0, 0);
             const todayEnd = new Date();
             todayEnd.setHours(23, 59, 59, 999);
+
+            // Multivendor scoping: non-admins only see stats for the tournaments
+            // they own. Resolve their owned tournament ids up front.
+            const isAdmin = isAdminUser(req.user);
+            let ownedIds: number[] | null = null;
+            if (!isAdmin) {
+                const owned = await tournamentRepo.find({
+                    where: { ownerId: req.user?.id },
+                    select: { id: true },
+                });
+                ownedIds = owned.map((t) => t.id);
+
+                // No tournaments yet → every stat is zero, skip the queries.
+                if (ownedIds.length === 0) {
+                    return res.json({
+                        success: true,
+                        data: {
+                            totalTournaments: 0, finishedTournaments: 0, liveTournaments: 0,
+                            totalTeams: 0, totalPlayers: 0, liveMatches: 0,
+                            todayUpcomingMatches: 0, todayFinishedMatches: 0,
+                        },
+                    });
+                }
+            }
+
+            const scope = ownedIds ? { id: In(ownedIds) } : {};
+            const matchScope = ownedIds ? { tournament: { id: In(ownedIds) } } : {};
+
+            const countDistinctTeams = () => {
+                const qb = tournamentTeamRepo.createQueryBuilder("tt").leftJoin("tt.team", "team");
+                if (ownedIds) qb.leftJoin("tt.tournament", "tr").where("tr.id IN (:...ids)", { ids: ownedIds });
+                return qb.select("COUNT(DISTINCT team.id)", "c").getRawOne().then((r) => Number(r?.c ?? 0));
+            };
+
+            const countDistinctPlayers = () => {
+                if (!ownedIds) {
+                    return memberRepo.count({ where: { role: TeamMemberRole.PLAYER } });
+                }
+                return memberRepo
+                    .createQueryBuilder("m")
+                    .innerJoin("m.team", "team")
+                    .innerJoin("team.tournamentRegistrations", "reg")
+                    .innerJoin("reg.tournament", "tr")
+                    .where("tr.id IN (:...ids)", { ids: ownedIds })
+                    .andWhere("m.role = :role", { role: TeamMemberRole.PLAYER })
+                    .select("COUNT(DISTINCT m.id)", "c")
+                    .getRawOne()
+                    .then((r) => Number(r?.c ?? 0));
+            };
 
             const [
                 totalTournaments,
@@ -68,17 +120,17 @@ export const DashboardController = {
                 todayUpcomingMatches,
                 todayFinishedMatches,
             ] = await Promise.all([
-                tournamentRepo.count(),
-                tournamentRepo.count({ where: { status: TournamentStatus.COMPLETED } }),
-                tournamentRepo.count({ where: { status: TournamentStatus.IN_PROGRESS } }),
-                teamRepo.count(),
-                memberRepo.count({ where: { role: TeamMemberRole.PLAYER } }),
-                matchRepo.count({ where: { status: MatchStatus.LIVE } }),
+                ownedIds ? Promise.resolve(ownedIds.length) : tournamentRepo.count(),
+                tournamentRepo.count({ where: { ...scope, status: TournamentStatus.COMPLETED } }),
+                tournamentRepo.count({ where: { ...scope, status: TournamentStatus.IN_PROGRESS } }),
+                countDistinctTeams(),
+                countDistinctPlayers(),
+                matchRepo.count({ where: { ...matchScope, status: MatchStatus.LIVE } }),
                 matchRepo.count({
-                    where: { status: MatchStatus.SCHEDULED, startTime: Between(todayStart, todayEnd) },
+                    where: { ...matchScope, status: MatchStatus.SCHEDULED, startTime: Between(todayStart, todayEnd) },
                 }),
                 matchRepo.count({
-                    where: { status: MatchStatus.COMPLETED, startTime: Between(todayStart, todayEnd) },
+                    where: { ...matchScope, status: MatchStatus.COMPLETED, startTime: Between(todayStart, todayEnd) },
                 }),
             ]);
 
@@ -289,14 +341,24 @@ export const DashboardController = {
             const eventRepo = AppDataSource.getRepository(MatchEvent);
 
             // Count goals per player_name + team
-            const scorers = await eventRepo
+            const query = eventRepo
                 .createQueryBuilder("ev")
                 .select("ev.player_name", "playerName")
                 .addSelect("t.name", "teamName")
                 .addSelect("COUNT(ev.id)", "goals")
                 .leftJoin("ev.team", "t")
                 .where("ev.type = :type", { type: MatchEventType.GOAL })
-                .andWhere("ev.player_name IS NOT NULL")
+                .andWhere("ev.player_name IS NOT NULL");
+
+            // Multivendor scoping: non-admins only see scorers from their tournaments.
+            if (!isAdminUser(req.user)) {
+                query
+                    .innerJoin("ev.match", "match")
+                    .innerJoin("match.tournament", "tr")
+                    .andWhere("tr.ownerId = :uid", { uid: req.user?.id });
+            }
+
+            const scorers = await query
                 .groupBy("ev.player_name")
                 .addGroupBy("t.id")
                 .orderBy("goals", "DESC")
@@ -322,12 +384,19 @@ export const DashboardController = {
     async getTopOrganizers(req: any, res: any) {
         try {
             const tournamentRepo = AppDataSource.getRepository(Tournament);
-            const organizers = await tournamentRepo
+            const orgQuery = tournamentRepo
                 .createQueryBuilder("t")
                 .select("u.user_name", "name")
                 .addSelect("u.email", "email")
                 .addSelect("COUNT(t.id)", "tournamentsCount")
-                .innerJoin("users", "u", "u.id = t.ownerId")
+                .innerJoin("users", "u", "u.id = t.ownerId");
+
+            // Non-admins only see their own row (no cross-organizer leaderboard).
+            if (!isAdminUser(req.user)) {
+                orgQuery.where("t.ownerId = :uid", { uid: req.user?.id });
+            }
+
+            const organizers = await orgQuery
                 .groupBy("u.id")
                 .orderBy("tournamentsCount", "DESC")
                 .limit(5)

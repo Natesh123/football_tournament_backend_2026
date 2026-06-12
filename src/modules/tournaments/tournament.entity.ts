@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, OneToOne, ManyToOne } from "typeorm";
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, OneToMany, OneToOne, ManyToOne } from "typeorm";
 import { Organizer } from "./organizer.entity";
 import { TournamentTeam } from "./tournament-team.entity";
 import { TournamentFormat } from "./tournament-format.entity";
@@ -111,4 +111,9 @@ export class Tournament {
 
     @UpdateDateColumn()
     updatedAt!: Date;
+
+    // Soft-delete marker. When set, the tournament is treated as deleted and
+    // automatically excluded from TypeORM find/QueryBuilder queries.
+    @DeleteDateColumn()
+    deletedAt?: Date;
 }

@@ -12,4 +12,7 @@ router.get("/match/:id", PublicController.getMatchData);
 // GET /api/public/tournament/latest/id
 router.get("/tournament/latest/id", PublicController.getLatestTournamentId);
 
+// POST /api/public/contact
+router.post("/contact", PublicController.submitContact);
+
 export default router;

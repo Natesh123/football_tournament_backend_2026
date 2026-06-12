@@ -5,6 +5,7 @@ import { GroupTeam } from "../tournaments/group-team.entity";
 import { Match } from "../matches/match.entity";
 import { MatchEvent, MatchEventType } from "../matches/match-event.entity";
 import { TeamMember } from "../teams/team-member.entity";
+import { sendContactEmail } from "../../utils/email.util";
 
 export const PublicController = {
     async getPortalData(req: any, res: any) {
@@ -274,7 +275,12 @@ export const PublicController = {
                         awayScore: match.awayScore,
                         status: match.status,
                         minute: match.live_minute,
-                        period: match.match_period
+                        period: match.match_period,
+                        periodStartedAt: match.periodStartedAt,
+                        addedMinutes: match.addedMinutes,
+                        penaltyHome: match.penaltyHome,
+                        penaltyAway: match.penaltyAway,
+                        endPeriod: match.endPeriod
                     },
                     presentation: {
                         brandColor
@@ -294,6 +300,27 @@ export const PublicController = {
         } catch (error: any) {
             console.error("Match Data Error:", error);
             res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    async submitContact(req: any, res: any) {
+        try {
+            const { name, email, subject, message } = req.body;
+
+            if (!name || !email || !subject || !message) {
+                return res.status(400).json({ success: false, message: "All fields are required." });
+            }
+
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                return res.status(400).json({ success: false, message: "Invalid email address." });
+            }
+
+            await sendContactEmail({ name, email, subject, message });
+
+            return res.json({ success: true, message: "Message received. We will get back to you shortly." });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: "Failed to send message." });
         }
     }
 };

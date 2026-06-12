@@ -8,6 +8,7 @@ import { GroupTeam } from "./group-team.entity";
 import { Match } from "../matches/match.entity";
 import { MatchSource } from "../matches/match-source.entity";
 import { Bracket } from "../brackets/bracket.entity";
+import { TournamentVenue } from "./venues/venue.entity";
 
 export class TournamentEngineService {
     private tournamentRepo = AppDataSource.getRepository(Tournament);
@@ -18,6 +19,7 @@ export class TournamentEngineService {
     private matchRepo = AppDataSource.getRepository(Match);
     private matchSourceRepo = AppDataSource.getRepository(MatchSource);
     private bracketRepo = AppDataSource.getRepository(Bracket);
+    private venueRepo = AppDataSource.getRepository(TournamentVenue);
 
     async generateStructure(tournamentId: string, scheduleConfig?: any) {
         const tournament = await this.tournamentRepo.findOne({
@@ -33,6 +35,15 @@ export class TournamentEngineService {
         const approvedTeams = tournament.teamRegistrations.filter(tr => tr.status === 'approved');
         if (approvedTeams.length !== requiredTeams) {
             throw new Error(`Need exactly ${requiredTeams} approved teams before scheduling. Currently have ${approvedTeams.length}.`);
+        }
+
+        // Matches are played at the tournament venue — validate it exists before
+        // touching the existing structure when auto-scheduling is requested
+        if (scheduleConfig && scheduleConfig.startDate) {
+            const venueNames = await this.getVenueAssignmentNames(tournamentId);
+            if (venueNames.length === 0) {
+                throw new Error("Venue details are required to schedule matches. Please add the tournament venue first.");
+            }
         }
 
         // Clean slate: delete all existing structure for this tournament
@@ -87,8 +98,7 @@ export class TournamentEngineService {
             await this.groupRepo.delete(groupIds);
         }
 
-        const stages = await this.stageRepo.find({ where: { format: { id: tournamentId.toString() } } }); // Format is 1:1 with tournament mostly, but actually stage relations might be messy.
-        // Let's rely on standard TypeORM or delete directly.
+        // Stages belong to the tournament's format — delete them directly.
         await AppDataSource.query(`DELETE FROM format_stages WHERE format_id IN (SELECT id FROM tournament_formats WHERE tournament_id = ?)`, [tournamentId]);
     }
 
@@ -223,6 +233,25 @@ export class TournamentEngineService {
         }
     }
 
+    // Venue names matches can be assigned to: the primary venue, or one entry per
+    // managed pitch when multiple pitches are enabled. Empty if no venue is set up.
+    private async getVenueAssignmentNames(tournamentId: string): Promise<string[]> {
+        const venue = await this.venueRepo.findOne({
+            where: { tournament: { id: parseInt(tournamentId) } }
+        });
+        const primary = venue?.primaryVenueName?.trim();
+        if (!primary) return [];
+
+        if (venue!.multipleVenuesEnabled && Array.isArray(venue!.pitches) && venue!.pitches.length > 0) {
+            const pitchNames = venue!.pitches
+                .map(p => p?.name?.trim())
+                .filter((n): n is string => !!n)
+                .map(n => `${primary} - ${n}`);
+            if (pitchNames.length > 0) return pitchNames;
+        }
+        return [primary];
+    }
+
     private async applyAutoSchedule(tournamentId: string, config: any) {
         const matches = await this.matchRepo.find({
             where: { tournament: { id: parseInt(tournamentId) } },
@@ -241,6 +270,13 @@ export class TournamentEngineService {
         }
 
         console.log(`[AutoSchedule] Found ${matches.length} matches. Starting config:`, config);
+
+        // Assign each match to one of the tournament's venues/pitches
+        const venueNames = await this.getVenueAssignmentNames(tournamentId);
+        if (venueNames.length === 0) {
+            throw new Error("Venue details are required to schedule matches. Please add the tournament venue first.");
+        }
+        let venueIdx = 0;
 
         let currentDate = new Date(config.startDate);
         const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -268,8 +304,10 @@ export class TournamentEngineService {
                         matchTime.setHours(hh || 12, mm || 0, 0, 0);
 
                         match.startTime = matchTime;
+                        match.venue = venueNames[venueIdx % venueNames.length];
+                        venueIdx++;
                         assigned = true;
-                        console.log(`[AutoSchedule] Assigned Match ${match.id} to ${matchTime.toISOString()} (${dayStr})`);
+                        console.log(`[AutoSchedule] Assigned Match ${match.id} to ${matchTime.toISOString()} (${dayStr}) at ${match.venue}`);
 
                         currentSlotIdx++;
                     }
@@ -314,8 +352,10 @@ export class TournamentEngineService {
             groups.push(await this.groupRepo.save(group));
         }
 
-        // Assign Teams (Basic Round Robin distribution)
-        const teams = tournament.teamRegistrations.map(tr => tr.team);
+        // Assign Teams (Basic Round Robin distribution) — only approved registrations
+        const teams = tournament.teamRegistrations
+            .filter(tr => tr.status === 'approved')
+            .map(tr => tr.team);
         // Shuffle teams for randomness
         teams.sort(() => Math.random() - 0.5);
 
@@ -380,6 +420,23 @@ export class TournamentEngineService {
         const roundsLog = Math.log2(numTeams);
         if (!Number.isInteger(roundsLog)) throw new Error("Number of knockout teams must be a power of 2");
 
+        // Approved registrations (used for pure-knockout direct seeding)
+        const approvedRegs = (tournament.teamRegistrations || []).filter(tr => tr.status === 'approved');
+
+        // For groups_knockout, capture the group names (sorted) so round-1 slots can be
+        // seeded as "<groupName>#<rank>" and later resolved from final group standings.
+        let groupSeeds: string[] = [];
+        if (tournament.format!.format_type === "groups_knockout") {
+            const grps = await this.groupRepo.find({
+                where: { tournament: { id: tournament.id } },
+                relations: ["stage"]
+            });
+            groupSeeds = grps
+                .filter(g => g.stage?.stage_type === "group")
+                .map(g => g.group_name)
+                .sort((a, b) => a.localeCompare(b));
+        }
+
         // Initialize Bracket Data Layer
         const bracketData: any = { rounds: [] };
 
@@ -409,19 +466,26 @@ export class TournamentEngineService {
 
                 // Sources
                 if (round === 1) {
-                    // First round of knockout gets sources from Groups or is TBD (TBD for Teams if pure knockout)
+                    // First round of knockout gets sources from Groups or direct teams (pure knockout)
                     if (tournament.format!.format_type === "groups_knockout") {
+                        // Standard cross-group seeding: winner of group m vs runner-up of the
+                        // next group, keeping a group's winner and runner-up apart in round 1.
+                        const numGroups = groupSeeds.length || 1;
+                        const homeGroup = groupSeeds[m % numGroups];
+                        const awayGroup = groupSeeds[(m + 1) % numGroups];
                         const source1 = this.matchSourceRepo.create({
-                            match: match, side: "home", source_type: "group_rank", source_value: "TBD" // Needs complex seeding logic
+                            match: match, side: "home", source_type: "group_rank",
+                            source_value: homeGroup ? `${homeGroup}#1` : "TBD"
                         });
                         const source2 = this.matchSourceRepo.create({
-                            match: match, side: "away", source_type: "group_rank", source_value: "TBD"
+                            match: match, side: "away", source_type: "group_rank",
+                            source_value: awayGroup ? `${awayGroup}#2` : "TBD"
                         });
                         await this.matchSourceRepo.save([source1, source2]);
                     } else {
-                        // Assign directly from registrations (simplified top down)
-                        const team1 = tournament.teamRegistrations[(matchCounter - 1) * 2]?.team;
-                        const team2 = tournament.teamRegistrations[(matchCounter - 1) * 2 + 1]?.team;
+                        // Assign directly from approved registrations (simplified top down)
+                        const team1 = approvedRegs[(matchCounter - 1) * 2]?.team;
+                        const team2 = approvedRegs[(matchCounter - 1) * 2 + 1]?.team;
 
                         if (team1) {
                             match.homeTeam = team1;

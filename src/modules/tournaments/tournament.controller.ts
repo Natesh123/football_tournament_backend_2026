@@ -183,7 +183,7 @@ export const TournamentController = {
             if (!data) return res.status(404).json({ success: false, message: "Tournament or Team not found" });
             res.json({ success: true, data });
         } catch (error: any) {
-            res.status(500).json({ success: false, message: error.message });
+            res.status(error.status || 500).json({ success: false, message: error.message });
         }
     },
 
@@ -194,16 +194,25 @@ export const TournamentController = {
                 return res.status(400).json({ success: false, message: "teamIds array is required" });
             }
 
+            // Register each team independently so one conflict (overlap / shared
+            // player) doesn't abort the batch — skipped teams are reported back.
             const results = [];
+            const skipped: { teamId: any; reason: string }[] = [];
             for (const teamId of teamIds) {
-                const data = await TournamentService.addTeam(req.params.id as string, teamId.toString());
-                if (data) {
-                    results.push(data);
+                try {
+                    const data = await TournamentService.addTeam(req.params.id as string, teamId.toString());
+                    if (data) {
+                        results.push(data);
+                    } else {
+                        skipped.push({ teamId, reason: "Tournament or team not found" });
+                    }
+                } catch (err: any) {
+                    skipped.push({ teamId, reason: err.message });
                 }
             }
-            res.json({ success: true, data: results });
+            res.json({ success: true, data: results, skipped });
         } catch (error: any) {
-            res.status(500).json({ success: false, message: error.message });
+            res.status(error.status || 500).json({ success: false, message: error.message });
         }
     },
 

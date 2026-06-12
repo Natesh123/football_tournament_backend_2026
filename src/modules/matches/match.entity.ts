@@ -120,6 +120,17 @@ export class Match {
     @Column({ type: "tinyint", nullable: true })
     penaltyAway?: number;
 
+    /** Referee added/stoppage time (minutes) for the current live period. */
+    @Column({ type: "tinyint", unsigned: true, nullable: true })
+    addedMinutes?: number;
+
+    /**
+     * Penalty shootout log. Kept separate from match_events so kicks never touch
+     * homeScore/awayScore. Shape: { kicks: [{ order, team, playerName, scored }] }.
+     */
+    @Column({ type: "json", nullable: true })
+    penaltyShootout?: any;
+
     @Column({
         type: "enum",
         enum: ["ft", "aet", "pso"],

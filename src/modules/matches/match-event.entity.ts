@@ -17,6 +17,7 @@ export enum MatchEventType {
     RED_CARD     = "red_card",
     SUBSTITUTION = "substitution",
     PENALTY      = "penalty",
+    PENALTY_MISSED = "penalty_missed",
     OWN_GOAL     = "own_goal",
     CORNER       = "corner",
     FOUL         = "foul",

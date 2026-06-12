@@ -4,6 +4,11 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
+if (!process.env.JWT_SECRET) {
+    console.error("FATAL: JWT_SECRET is not set. Add it to your .env before starting the server.");
+    process.exit(1);
+}
+
 const PORT = process.env.PORT || 3000;
 const MAX_RETRIES = 10;
 const RETRY_INTERVAL = 5000; // 5 seconds

@@ -1,7 +1,9 @@
+import { Not } from "typeorm";
 import { AppDataSource } from "../../config/data-source";
 import { Tournament, TournamentStatus } from "./tournament.entity";
 import { TournamentTeam, TeamStatus, TeamPaymentStatus } from "./tournament-team.entity";
 import { Team } from "../teams/team.entity";
+import { TeamMember } from "../teams/team-member.entity";
 import { saveBase64Image } from "../../utils/image-upload.utils";
 import { tournamentRulesService } from "./tournament-rules.service";
 import { ExtraTimeRule, GoalkeeperRule, TournamentRules } from "./tournament-rules.entity";
@@ -189,6 +191,19 @@ function mapDtoToPresentation(dto: any) {
 const tournamentRepo = AppDataSource.getRepository(Tournament);
 const tournamentTeamRepo = AppDataSource.getRepository(TournamentTeam);
 const teamRepo = AppDataSource.getRepository(Team);
+const teamMemberRepo = AppDataSource.getRepository(TeamMember);
+
+/** A registration-integrity violation, surfaced to the client as HTTP 409. */
+function conflictError(message: string): Error {
+    const err = new Error(message);
+    (err as any).status = 409;
+    return err;
+}
+
+/** Inclusive date-range overlap test: true when [aStart,aEnd] intersects [bStart,bEnd]. */
+function datesOverlap(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
+    return new Date(aStart) <= new Date(bEnd) && new Date(bStart) <= new Date(aEnd);
+}
 
 export const TournamentService = {
     async findAll(user?: any): Promise<any[]> {
@@ -199,13 +214,10 @@ export const TournamentService = {
             .orderBy("tournament.createdAt", "DESC");
 
         if (user) {
-            const userRole = user.role?.toLowerCase() || '';
-            if (userRole === 'admin') {
-                // Admins see all tournaments
-            } else if (userRole === 'organizer') {
+            const isAdmin = user.role?.toLowerCase() === 'admin' || user.roleId === 1;
+            if (!isAdmin) {
+                // Multivendor scoping: non-admins only see the tournaments they own.
                 query.andWhere("tournament.ownerId = :userId", { userId: user.id });
-            } else {
-                query.andWhere("tournament.visibility = :visibility", { visibility: 'public' });
             }
         }
 
@@ -425,7 +437,9 @@ export const TournamentService = {
     },
 
     async remove(id: string): Promise<boolean> {
-        const result = await tournamentRepo.delete(id);
+        // Soft delete: sets deletedAt instead of removing the row, so the
+        // tournament drops out of all default queries but data is preserved.
+        const result = await tournamentRepo.softDelete(id);
         return (result.affected ?? 0) > 0;
     },
 
@@ -440,24 +454,66 @@ export const TournamentService = {
     },
 
     async addTeam(tournamentId: string, teamId: string): Promise<TournamentTeam | null> {
-        const tournament = await tournamentRepo.findOneBy({ id: parseInt(tournamentId) });
-        const team = await teamRepo.findOneBy({ id: parseInt(teamId) });
+        const tId = parseInt(tournamentId);
+        const teamIdNum = parseInt(teamId);
+        const tournament = await tournamentRepo.findOneBy({ id: tId });
+        const team = await teamRepo.findOneBy({ id: teamIdNum });
 
         if (!tournament || !team) return null;
 
         // Check if already registered
         const existing = await tournamentTeamRepo.findOne({
-            where: { tournament: { id: parseInt(tournamentId) }, team: { id: parseInt(teamId) } }
+            where: { tournament: { id: tId }, team: { id: teamIdNum } }
         });
 
         if (existing) return existing;
 
         // Enforce max teams limit
         const currentCount = await tournamentTeamRepo.count({
-            where: { tournament: { id: parseInt(tournamentId) } }
+            where: { tournament: { id: tId } }
         });
         if (currentCount >= (tournament.maxTeams || 16)) {
-            throw new Error(`Maximum team limit of ${tournament.maxTeams || 16} reached`);
+            throw conflictError(`Maximum team limit of ${tournament.maxTeams || 16} reached`);
+        }
+
+        // (A) A team cannot play in two tournaments that run at the same time.
+        // Soft-deleted tournaments are auto-excluded by the DeleteDateColumn.
+        const otherRegs = await tournamentTeamRepo.find({
+            where: { team: { id: teamIdNum }, status: Not(TeamStatus.REJECTED) },
+            relations: ["tournament"],
+        });
+        for (const reg of otherRegs) {
+            const other = reg.tournament;
+            if (!other || other.id === tId) continue;
+            if (datesOverlap(other.startDate, other.endDate, tournament.startDate, tournament.endDate)) {
+                throw conflictError(
+                    `Team "${team.name}" is already registered in "${other.name}", which overlaps this tournament's dates.`
+                );
+            }
+        }
+
+        // (B) A player can only play for one team within a single tournament.
+        // Players are matched by name (the only identifier on TeamMember).
+        const incomingMembers = await teamMemberRepo.find({ where: { team: { id: teamIdNum } } });
+        const incomingNames = new Set(
+            incomingMembers.map((m) => m.name.trim().toLowerCase()).filter(Boolean)
+        );
+        if (incomingNames.size > 0) {
+            const tournamentRegs = await tournamentTeamRepo.find({
+                where: { tournament: { id: tId }, status: Not(TeamStatus.REJECTED) },
+                relations: ["team"],
+            });
+            for (const reg of tournamentRegs) {
+                if (!reg.team || reg.team.id === teamIdNum) continue;
+                const members = await teamMemberRepo.find({ where: { team: { id: reg.team.id } } });
+                for (const m of members) {
+                    if (incomingNames.has(m.name.trim().toLowerCase())) {
+                        throw conflictError(
+                            `Player "${m.name}" already plays for "${reg.team.name}" in this tournament.`
+                        );
+                    }
+                }
+            }
         }
 
         const registration = tournamentTeamRepo.create({

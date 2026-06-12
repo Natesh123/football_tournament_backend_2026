@@ -22,6 +22,18 @@ export class TeamMemberController {
         }
     };
 
+    update = async (req: Request, res: Response) => {
+        try {
+            const member = await this.memberService.update(req.params.id as string, req.body);
+            if (!member) {
+                return res.status(404).json({ message: "Team member not found" });
+            }
+            res.json(member);
+        } catch (error) {
+            res.status(500).json({ message: "Failed to update team member", error });
+        }
+    };
+
     delete = async (req: Request, res: Response) => {
         try {
             await this.memberService.delete(req.params.id as string);

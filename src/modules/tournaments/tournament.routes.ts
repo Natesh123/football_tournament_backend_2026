@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { TournamentController } from "./tournament.controller";
+import { authMiddleware } from "../auth/auth.middleware";
+import { authorizeTournamentOwnership } from "./tournament.middleware";
 import rulesRouter from "./tournament-rules.routes";
 import venueRouter from "./venues/venue.routes";
 import financeRouter from "./finance/finance.routes";
@@ -8,9 +10,17 @@ import resultsRouter from "./results/results.routes";
 
 const router = Router();
 
+// Every tournament route requires a logged-in user; req.user drives ownership scoping.
+router.use(authMiddleware);
+
+// Collection-level routes (not tied to a specific tournament).
 router.get("/", TournamentController.getAll);
-router.get("/:id", TournamentController.getById);
 router.post("/", TournamentController.create);
+
+// Everything below operates on one tournament → admins, or the owner only.
+router.use("/:id", authorizeTournamentOwnership);
+
+router.get("/:id", TournamentController.getById);
 router.put("/:id", TournamentController.update);
 router.delete("/:id", TournamentController.remove);
 

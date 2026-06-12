@@ -4,9 +4,14 @@ import { Server as HttpServer } from "http";
 let io: Server;
 
 export const initSocket = (server: HttpServer) => {
+    const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:4200")
+        .split(",")
+        .map(o => o.trim())
+        .filter(Boolean);
+
     io = new Server(server, {
         cors: {
-            origin: "*", // Adjust for production
+            origin: allowedOrigins,
             methods: ["GET", "POST"]
         }
     });
