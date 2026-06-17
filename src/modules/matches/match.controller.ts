@@ -386,15 +386,40 @@ export const MatchController = {
     async updateSchedule(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            const { venue, matchTime, startTime, breakDuration, matchReferees, referees, status } = req.body;
+            const { venue, matchTime, startTime, breakDuration, matchReferees, referees, status, homeTeamId, awayTeamId } = req.body;
 
             const matchRepo = AppDataSource.getRepository(Match);
-            const match = await matchRepo.findOne({ 
+            const match = await matchRepo.findOne({
                 where: { id: Number(id) },
                 relations: ["homeTeam", "awayTeam", "group", "stage", "tournament", "tournament.rules"]
             });
 
             if (!match) return res.status(404).json({ success: false, message: "Match not found" });
+
+            // Allow (re)assigning the teams for a fixture — e.g. filling TBD bracket
+            // slots. `null` clears a slot; an id sets it. Reject the same team on both
+            // sides. Editing teams of a finished match isn't allowed (results stand).
+            if (homeTeamId !== undefined || awayTeamId !== undefined) {
+                if (match.status === MatchStatus.COMPLETED) {
+                    return res.status(400).json({ success: false, message: "Cannot change teams of a completed match." });
+                }
+                const teamRepo = AppDataSource.getRepository(Team);
+                const resolveTeam = async (val: any) => {
+                    if (val === null || val === '' ) return null;
+                    const team = await teamRepo.findOne({ where: { id: Number(val) } });
+                    if (!team) throw new Error(`Team ${val} not found`);
+                    return team;
+                };
+                const nextHome = homeTeamId !== undefined ? await resolveTeam(homeTeamId) : match.homeTeam ?? null;
+                const nextAway = awayTeamId !== undefined ? await resolveTeam(awayTeamId) : match.awayTeam ?? null;
+                if (nextHome && nextAway && nextHome.id === nextAway.id) {
+                    return res.status(400).json({ success: false, message: "Home and away teams must be different." });
+                }
+                // Assign null (not undefined) to actually clear a slot back to TBD —
+                // TypeORM ignores undefined relations on save.
+                if (homeTeamId !== undefined) match.homeTeam = (nextHome as any);
+                if (awayTeamId !== undefined) match.awayTeam = (nextAway as any);
+            }
 
             // A scheduled match must keep a venue — reject attempts to clear it
             if (venue !== undefined) {
@@ -858,57 +883,6 @@ export const MatchController = {
         }
     },
 
-    async endMatch(req: Request, res: Response) {
-        try {
-            const { id } = req.params;
-            const matchRepo = AppDataSource.getRepository(Match);
-            const matchSourceRepo = AppDataSource.getRepository(MatchSource);
-
-            const match = await matchRepo.findOne({ 
-                where: { id: Number(id) },
-                relations: ["homeTeam", "awayTeam", "group", "stage", "tournament", "tournament.rules"]
-            });
-            if (!match) return res.status(404).json({ success: false, message: "Match not found" });
-
-            match.status = MatchStatus.COMPLETED;
-            await matchRepo.save(match);
-
-            // Recalculate group standings from scratch after ending the match
-            if (match.group && match.homeTeam && match.awayTeam) {
-                await recalculateGroupStandings(match.group.id);
-            }
-
-            // If a group match ended, try to promote qualifiers into the knockout bracket
-            if (match.group && match.tournament) {
-                await resolveGroupQualifiers(match.tournament.id);
-            }
-
-            // Propagate winner to knockout next round (PSO-aware; no advance on a true draw)
-            if (match.stage && match.stage.stage_type === "knockout") {
-                const pendingSources = await matchSourceRepo.find({
-                    where: { source_type: "match_winner", source_value: match.id.toString() },
-                    relations: ["match"]
-                });
-                const winner = resolveWinner(match);
-                if (winner) {
-                    for (const source of pendingSources) {
-                        const targetMatch = await matchRepo.findOne({ where: { id: source.match.id } });
-                        if (targetMatch) {
-                            if (source.side === "home") targetMatch.homeTeam = winner;
-                            if (source.side === "away") targetMatch.awayTeam = winner;
-                            await matchRepo.save(targetMatch);
-                        }
-                    }
-                }
-            }
-
-            res.json({ success: true, data: formatMatch(match), message: "Match ended successfully" });
-            emitMatchUpdate(id.toString(), formatMatch(match));
-        } catch (error: any) {
-            res.status(500).json({ success: false, message: error.message });
-        }
-    },
-
     async updateLiveState(req: Request, res: Response) {
         try {
             const { id } = req.params;
@@ -934,6 +908,12 @@ export const MatchController = {
             if (match_period !== undefined) {
                 match.match_period = match_period;
                 match.periodStartedAt = new Date();
+                // Being in extra time means the match's furthest period is extra time,
+                // not a shootout — so reset endPeriod to "aet" (covers coming back from
+                // a premature switch to penalties, where it would have been "pso").
+                if (match_period === "extra_time") {
+                    match.endPeriod = "aet";
+                }
             }
 
             // Referee added/stoppage time (null/0 clears it)

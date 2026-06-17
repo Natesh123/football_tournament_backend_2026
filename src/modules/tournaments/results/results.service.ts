@@ -49,24 +49,34 @@ export class ResultsService {
     }
 
     async getResults(tournamentId: number): Promise<any[]> {
+        // Include scheduled and live matches too, so the bracket/fixtures view
+        // shows upcoming matches — not only finished ones. Ordered by stage then
+        // kickoff so each stage reads chronologically.
         const matches = await this.matchRepo.find({
-            where: { tournament: { id: tournamentId }, status: MatchStatus.COMPLETED },
-            relations: ["homeTeam", "awayTeam", "stage", "matchEvents"]
+            where: { tournament: { id: tournamentId } },
+            relations: ["homeTeam", "awayTeam", "stage", "matchEvents"],
+            order: { startTime: "ASC", id: "ASC" }
         });
 
         const result: any[] = [];
         for (const m of matches) {
             let winner = null;
-            if (m.homeScore > m.awayScore) winner = m.homeTeam;
-            else if (m.homeScore < m.awayScore) winner = m.awayTeam;
-            else if (m.endPeriod === "pso") {
-                if ((m.penaltyHome ?? 0) > (m.penaltyAway ?? 0)) winner = m.homeTeam;
-                else if ((m.penaltyHome ?? 0) < (m.penaltyAway ?? 0)) winner = m.awayTeam;
+            if (m.status === MatchStatus.COMPLETED) {
+                if (m.homeScore > m.awayScore) winner = m.homeTeam;
+                else if (m.homeScore < m.awayScore) winner = m.awayTeam;
+                else if (m.endPeriod === "pso") {
+                    if ((m.penaltyHome ?? 0) > (m.penaltyAway ?? 0)) winner = m.homeTeam;
+                    else if ((m.penaltyHome ?? 0) < (m.penaltyAway ?? 0)) winner = m.awayTeam;
+                }
             }
 
             result.push({
                 id: m.id,
                 stage: m.stage ? m.stage.stage_name : "General",
+                stageOrder: m.stage ? m.stage.stage_order : 999,
+                round: m.round ?? null,
+                status: m.status,
+                startTime: m.startTime,
                 homeTeam: m.homeTeam,
                 awayTeam: m.awayTeam,
                 homeScore: m.homeScore,
@@ -78,8 +88,8 @@ export class ResultsService {
                 goals: (m.matchEvents || []).filter((e: any) => e.type === "goal" || e.type === "penalty")
             });
         }
-        
-        // Group by stage
+
+        // Group by stage, preserving stage order
         const grouped = result.reduce((acc: any, curr: any) => {
             const st = curr.stage;
             if (!acc[st]) acc[st] = [];
@@ -87,10 +97,12 @@ export class ResultsService {
             return acc;
         }, {});
 
-        return Object.keys(grouped).map(key => ({
-            stage: key,
-            matches: grouped[key]
-        }));
+        return Object.keys(grouped)
+            .sort((a, b) => grouped[a][0].stageOrder - grouped[b][0].stageOrder)
+            .map(key => ({
+                stage: key,
+                matches: grouped[key]
+            }));
     }
 
     async getTopPerformance(tournamentId: number): Promise<any> {

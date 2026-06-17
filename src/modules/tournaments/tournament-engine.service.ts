@@ -31,10 +31,13 @@ export class TournamentEngineService {
             throw new Error("Tournament or format not found");
         }
 
-        const requiredTeams = tournament.maxTeams || 16;
+        // Generate with whatever is approved (minimum two to form a match). The
+        // bracket is built in full; slots without a team yet stay TBD and fill in
+        // as more teams are approved and the structure is regenerated, or as
+        // earlier matches are completed.
         const approvedTeams = tournament.teamRegistrations.filter(tr => tr.status === 'approved');
-        if (approvedTeams.length !== requiredTeams) {
-            throw new Error(`Need exactly ${requiredTeams} approved teams before scheduling. Currently have ${approvedTeams.length}.`);
+        if (approvedTeams.length < 2) {
+            throw new Error(`Need at least 2 approved teams before generating the structure. Currently have ${approvedTeams.length}.`);
         }
 
         // Matches are played at the tournament venue — validate it exists before
@@ -138,7 +141,9 @@ export class TournamentEngineService {
                 stage_order: stageOrder++,
                 stage_type: isGroup ? "group" : "knockout",
                 stage_name: phase.name || (isGroup ? "Group Stage" : "Knockout Stage"),
-                teams_count: 0 // Will calculate if needed
+                // Bracket size = slots in the first knockout round (matches * 2); used
+                // to derive round names/labels (QF/SF/F). Groups don't need it.
+                teams_count: isGroup ? 0 : ((phase.rounds?.[0]?.matches?.length || 0) * 2)
             });
             await this.stageRepo.save(stage);
 
@@ -187,7 +192,20 @@ export class TournamentEngineService {
                     }
                 }
             } else if (!isGroup && phase.rounds) {
-                // Knockout logic based closely on UI rounds
+                // Knockout logic based closely on UI rounds. The visual board encodes
+                // each later-round slot as "Winner Match <id>" referencing an earlier
+                // round's match id (e.g. "Winner Match M1" -> round-data match "m1").
+                // We turn those references into match_winner sources so that completing
+                // a match auto-advances the winner into the next round (see finishMatch
+                // in match.controller). Without these links the bracket never fills.
+                const matchIdMap = new Map<string, Match>();
+                const refMatchId = (label?: string): string | null => {
+                    if (!label || label === 'EMPTY SLOT') return null;
+                    const tokens = label.match(/m\s*\d+/gi);
+                    if (!tokens || tokens.length === 0) return null;
+                    return tokens[tokens.length - 1].replace(/\s+/g, "").toLowerCase();
+                };
+
                 let roundIdx = 1;
                 for (const roundData of phase.rounds) {
                     let matchCounter = 1;
@@ -217,9 +235,24 @@ export class TournamentEngineService {
                         if (awayTeam) match.awayTeam = awayTeam;
 
                         await this.matchRepo.save(match);
+                        if (matchData.id) matchIdMap.set(String(matchData.id).toLowerCase(), match);
 
-                        // Linking matches conditionally could be added here if needed, 
-                        // but the front-end renders knockouts based on positions usually.
+                        // Wire each still-empty slot to the winner of the earlier match
+                        // it references, so finishMatch can propagate the winner forward.
+                        const sources: MatchSource[] = [];
+                        if (!match.homeTeam) {
+                            const feeder = matchIdMap.get(refMatchId(homeLabel) ?? "");
+                            if (feeder) sources.push(this.matchSourceRepo.create({
+                                match, side: "home", source_type: "match_winner", source_value: feeder.id.toString()
+                            }));
+                        }
+                        if (!match.awayTeam) {
+                            const feeder = matchIdMap.get(refMatchId(awayLabel) ?? "");
+                            if (feeder) sources.push(this.matchSourceRepo.create({
+                                match, side: "away", source_type: "match_winner", source_value: feeder.id.toString()
+                            }));
+                        }
+                        if (sources.length > 0) await this.matchSourceRepo.save(sources);
                     }
                     roundIdx++;
                 }
@@ -547,36 +580,25 @@ export class TournamentEngineService {
 
         const mappedMatches = matches.map(match => {
             if (match.stage?.stage_type === "knockout") {
-                // Hide match if both teams are NULL
-                if (!match.homeTeam && !match.awayTeam) return null;
-
+                // Show every knockout match, even with no teams yet, so the full
+                // bracket is visible up front. Empty slots are labelled TBD (or
+                // "Winner of <match>" when they feed off an earlier result).
                 const m: any = { ...match };
 
-                if (!m.homeTeam) {
-                    let label = `Winner of Match ${match.bracketPosition || 'TBD'}`;
-                    const src = match.matchSources?.find(s => s.side === "home" && s.source_type === "match_winner");
+                const slotLabel = (side: "home" | "away"): string => {
+                    const src = match.matchSources?.find(s => s.side === side && s.source_type === "match_winner");
                     if (src) {
                         const prevMatch = matches.find(pm => pm.id.toString() === src.source_value);
                         if (prevMatch) {
                             const abbr = this.getRoundAbbr(prevMatch);
-                            label = `Winner of ${abbr}${prevMatch.bracketPosition || ''}`;
+                            return `Winner of ${abbr}${prevMatch.bracketPosition || ''}`;
                         }
                     }
-                    m.homeTeam = { label, slot: match.bracketPosition };
-                }
+                    return "TBD";
+                };
 
-                if (!m.awayTeam) {
-                    let label = `Winner of Match ${match.bracketPosition || 'TBD'}`;
-                    const src = match.matchSources?.find(s => s.side === "away" && s.source_type === "match_winner");
-                    if (src) {
-                        const prevMatch = matches.find(pm => pm.id.toString() === src.source_value);
-                        if (prevMatch) {
-                            const abbr = this.getRoundAbbr(prevMatch);
-                            label = `Winner of ${abbr}${prevMatch.bracketPosition || ''}`;
-                        }
-                    }
-                    m.awayTeam = { label, slot: match.bracketPosition };
-                }
+                if (!m.homeTeam) m.homeTeam = { label: slotLabel("home"), slot: match.bracketPosition };
+                if (!m.awayTeam) m.awayTeam = { label: slotLabel("away"), slot: match.bracketPosition };
 
                 return m;
             }
