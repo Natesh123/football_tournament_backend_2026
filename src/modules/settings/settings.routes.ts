@@ -15,6 +15,7 @@ router.use(requireAdmin);
 
 router.post("/roles", settingsController.addRole);
 router.get("/roles", settingsController.getRoles);
+router.delete("/roles/:id", settingsController.deleteRole);
 
 router.get("/users", settingsController.getUsers);
 router.post("/users", settingsController.saveUser);

@@ -41,8 +41,27 @@ export async function createRole(name: string) {
 
 export async function getAllRoles() {
     const roleRepository = AppDataSource.getRepository(UserRole);
+    return await roleRepository.find();
+}
+
+export async function deleteRole(id: number) {
+    const roleRepository = AppDataSource.getRepository(UserRole);
+    if (id === 1) throw new Error("Cannot delete Admin role");
+    
+    // Set users with this role to have no role
+    const userRepository = AppDataSource.getRepository(User);
     // @ts-ignore
-    return await roleRepository.find({ where: { id: Not(1) } });
+    await userRepository.update({ roleId: id }, { roleId: null });
+
+    // Clean up permissions first to avoid foreign key constraints
+    const permissionRepository = AppDataSource.getRepository(Permission);
+    await permissionRepository.delete({ roleId: id });
+    
+    const result = await roleRepository.delete(id);
+    if (result.affected === 0) {
+        throw new Error("Role not found or could not be deleted");
+    }
+    return { message: "Role deleted successfully" };
 }
 
 export async function getAllUsers() {

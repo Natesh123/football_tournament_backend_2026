@@ -20,6 +20,19 @@ export async function getRoles(req: Request, res: Response) {
     }
 }
 
+import * as fs from "fs";
+
+export async function deleteRole(req: Request, res: Response) {
+    try {
+        const id = parseInt(req.params.id as string);
+        const result = await settingsService.deleteRole(id);
+        res.json(result);
+    } catch (err: any) {
+        fs.appendFileSync("delete_role_error.log", new Date().toISOString() + " - " + err.message + "\n" + err.stack + "\n\n");
+        res.status(400).json({ error: err.message });
+    }
+}
+
 export async function getUsers(req: Request, res: Response) {
     try {
         const users = await settingsService.getAllUsers();
