@@ -54,7 +54,10 @@ export class TeamController {
                 fs.unlinkSync(tempFile.path);
             }
             console.error("Create team error:", error);
-            res.status(500).json({ message: "Failed to create team", error: error?.message ?? String(error) });
+            res.status(error?.status || 500).json({
+                message: error?.status ? error.message : "Failed to create team",
+                error: error?.message ?? String(error)
+            });
         }
     };
 
@@ -165,7 +168,10 @@ export class TeamController {
                 fs.unlinkSync(tempFile.path);
             }
             console.error("Update team error:", error);
-            res.status(500).json({ message: "Failed to update team", error: error?.message ?? String(error) });
+            res.status(error?.status || 500).json({
+                message: error?.status ? error.message : "Failed to update team",
+                error: error?.message ?? String(error)
+            });
         }
     };
 }

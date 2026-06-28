@@ -443,6 +443,49 @@ export const TournamentService = {
         return (result.affected ?? 0) > 0;
     },
 
+    /**
+     * Finalize tournament setup: re-validate that every required section is complete
+     * server-side, then move the tournament to REGISTRATION_OPEN. Throws a 400-tagged
+     * error listing the missing sections when validation fails.
+     */
+    async submitTournament(id: string): Promise<Tournament> {
+        const tournament = await tournamentRepo.findOne({
+            where: { id: parseInt(id) },
+            relations: ["format"]
+        });
+        if (!tournament) {
+            const err: any = new Error("Tournament not found");
+            err.status = 404;
+            throw err;
+        }
+
+        const missing: string[] = [];
+        const name = tournament.name?.trim();
+        if (!name || name === "null" || name === "New Tournament") missing.push("General (name)");
+        if (!tournament.type) missing.push("General (type)");
+        if (!tournament.startDate) missing.push("Schedule (start date)");
+        if (!tournament.endDate) missing.push("Schedule (end date)");
+        if (!tournament.minTeams || !tournament.maxTeams || tournament.minTeams > tournament.maxTeams) {
+            missing.push("Participation (team limits)");
+        }
+
+        const venue = await venueService.getVenue(tournament.id);
+        if (!venue || !venue.primaryVenueName?.trim()) missing.push("Venues (primary venue)");
+
+        if (!tournament.format || !(tournament.format as any).format_type) missing.push("Format");
+
+        if (missing.length > 0) {
+            const err: any = new Error(
+                `Complete all required sections before submitting. Missing: ${missing.join(", ")}.`
+            );
+            err.status = 400;
+            throw err;
+        }
+
+        tournament.status = TournamentStatus.REGISTRATION_OPEN;
+        return tournamentRepo.save(tournament);
+    },
+
     // --- Team Registrations ---
 
     async getTeams(tournamentId: string): Promise<TournamentTeam[]> {
