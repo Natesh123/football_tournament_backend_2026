@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { registerUser, verifyOtp, loginUser, resendOtpService, validateTokenService, requestPasswordReset, resetPassword } from "./auth.service";
+import { registerUser, verifyOtp, loginUser, resendOtpService, validateTokenService, requestPasswordReset, resetPassword, verifyResetToken } from "./auth.service";
 
 
 export async function register(req: Request, res: Response) {
@@ -56,12 +56,24 @@ export async function validateTokenController(req: Request, res: Response) {
 
 export async function forgotPasswordController(req: Request, res: Response) {
     try {
-        const { email } = req.body;
+        const { email, platform } = req.body;
         if (!email) return res.status(400).json({ error: "Email is required." });
-        const result = await requestPasswordReset(email);
+        const client = platform === "mobile" ? "mobile" : "web";
+        const result = await requestPasswordReset(email, client);
         res.json(result);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
+    }
+}
+
+export async function verifyResetTokenController(req: Request, res: Response) {
+    try {
+        const { token } = req.body;
+        if (!token) return res.status(400).json({ error: "Token is required." });
+        const result = await verifyResetToken(token);
+        res.json(result);
+    } catch (err: any) {
+        res.status(400).json({ error: err.message });
     }
 }
 

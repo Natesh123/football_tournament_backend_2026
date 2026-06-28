@@ -250,7 +250,7 @@ export async function resendOtpService(email: string) {
     return { message: "OTP resent successfully" };
 }
 
-export async function requestPasswordReset(email: string) {
+export async function requestPasswordReset(email: string, platform: "mobile" | "web" = "web") {
     const userRepo = AppDataSource.getRepository(User);
     const otpRepo = AppDataSource.getRepository(UserOtp);
 
@@ -273,17 +273,66 @@ export async function requestPasswordReset(email: string) {
     });
     await otpRepo.save(entry);
 
-    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:4200";
-    const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
+    const resetLink = buildResetLink(rawToken, platform);
 
     await sendPasswordResetEmail(email, resetLink);
 
     return { message: "If that email exists, a reset link has been sent." };
 }
 
+/**
+ * Build the reset link for the requesting client.
+ * - mobile: a custom-scheme deep link the Flutter app intercepts (configurable via MOBILE_RESET_LINK).
+ * - web: the Angular admin reset page (configurable via FRONTEND_URL).
+ */
+function buildResetLink(rawToken: string, platform: "mobile" | "web"): string {
+    if (platform === "mobile") {
+        const base = process.env.MOBILE_RESET_LINK || "footballapp://reset-password";
+        return `${base}?token=${rawToken}`;
+    }
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:4200";
+    return `${frontendUrl}/reset-password?token=${rawToken}`;
+}
+
+/**
+ * Validate a reset token WITHOUT consuming it. Used by the mobile app to decide
+ * whether to show the "set new password" form before the user submits.
+ */
+export async function verifyResetToken(rawToken: string): Promise<{ valid: boolean }> {
+    if (!rawToken) return { valid: false };
+    const otpRepo = AppDataSource.getRepository(UserOtp);
+    const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex");
+
+    const entry = await otpRepo.findOne({ where: { otp: hashedToken, is_used: false } });
+    if (!entry) return { valid: false };
+    if (entry.expires_at < new Date()) return { valid: false };
+    return { valid: true };
+}
+
+/**
+ * Authoritative password strength rule shared by the reset flow:
+ * min 8 chars, at least one uppercase, one lowercase, one number and one special character.
+ */
+export function isStrongPassword(password: string): boolean {
+    if (typeof password !== "string" || password.length < 8) return false;
+    return (
+        /[A-Z]/.test(password) &&
+        /[a-z]/.test(password) &&
+        /[0-9]/.test(password) &&
+        /[^A-Za-z0-9]/.test(password)
+    );
+}
+
 export async function resetPassword(rawToken: string, newPassword: string) {
     const userRepo = AppDataSource.getRepository(User);
     const otpRepo = AppDataSource.getRepository(UserOtp);
+
+    // Enforce the authoritative password policy server-side (clients also validate).
+    if (!isStrongPassword(newPassword)) {
+        throw new Error(
+            "Password must be at least 8 characters and include uppercase, lowercase, a number and a special character."
+        );
+    }
 
     const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex");
 
@@ -297,8 +346,13 @@ export async function resetPassword(rawToken: string, newPassword: string) {
     user.password = await bcrypt.hash(newPassword, 10);
     await userRepo.save(user);
 
+    // Single-use: mark consumed, then remove every reset token for this user so no
+    // stale link remains usable. NOTE: JWTs here are stateless (no session store), so
+    // there are no server-side sessions to invalidate; a `tokenVersion` column would be
+    // the future approach if forced logout-on-reset is required.
     entry.is_used = true;
     await otpRepo.save(entry);
+    await otpRepo.delete({ user_id: user.id });
 
     return { message: "Password updated successfully." };
 }

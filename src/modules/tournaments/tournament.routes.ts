@@ -24,6 +24,9 @@ router.get("/:id", TournamentController.getById);
 router.put("/:id", TournamentController.update);
 router.delete("/:id", TournamentController.remove);
 
+// Finalize setup → moves status to registration_open after server-side validation.
+router.post("/:id/submit", TournamentController.submit);
+
 // --- Team Registrations ---
 router.get("/:id/teams", TournamentController.getTeams);
 router.post("/:id/teams/bulk", TournamentController.addTeamsBulk);

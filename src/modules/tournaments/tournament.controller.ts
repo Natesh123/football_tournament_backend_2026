@@ -166,6 +166,15 @@ export const TournamentController = {
         }
     },
 
+    async submit(req: any, res: any) {
+        try {
+            const tournament = await TournamentService.submitTournament(req.params.id as string);
+            res.json({ success: true, data: tournament });
+        } catch (error: any) {
+            res.status(error.status || 500).json({ success: false, message: error.message });
+        }
+    },
+
     // --- Team Registrations ---
 
     async getTeams(req: any, res: any) {

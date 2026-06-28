@@ -1,3 +1,4 @@
+import { ILike, Not } from "typeorm";
 import { AppDataSource } from "../../config/data-source";
 import { Team } from "./team.entity";
 import { Match, MatchStatus } from "../matches/match.entity";
@@ -39,8 +40,23 @@ export class TeamService {
     }
 
     async create(data: Partial<Team>) {
+        await this.assertUniqueName(data.name);
         const team = this.teamRepository.create(data);
         return this.teamRepository.save(team);
+    }
+
+    /** Throw a 409 if another team already uses this name (case-insensitive). */
+    private async assertUniqueName(name?: string, excludeId?: number) {
+        const trimmed = name?.trim();
+        if (!trimmed) return;
+        const where: any = { name: ILike(trimmed) };
+        if (excludeId) where.id = Not(excludeId);
+        const existing = await this.teamRepository.findOne({ where });
+        if (existing) {
+            const err: any = new Error("A team with this name already exists.");
+            err.status = 409;
+            throw err;
+        }
     }
 
     async updateLogoUrl(id: string, logoUrl: string) {
@@ -48,6 +64,7 @@ export class TeamService {
     }
 
     async update(id: string, data: Partial<Team>) {
+        await this.assertUniqueName(data.name, parseInt(id));
         await this.teamRepository.update(parseInt(id), data);
         return this.getById(id);
     }
