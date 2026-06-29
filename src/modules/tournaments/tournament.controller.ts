@@ -248,6 +248,37 @@ export const TournamentController = {
         }
     },
 
+    // --- Referees ---
+
+    async getReferees(req: any, res: any) {
+        try {
+            const data = await TournamentService.getReferees(req.params.id as string);
+            res.json({ success: true, data });
+        } catch (error: any) {
+            res.status(error.status || 500).json({ success: false, message: error.message });
+        }
+    },
+
+    async addReferee(req: any, res: any) {
+        try {
+            const data = await TournamentService.addReferee(req.params.id as string, req.body);
+            if (!data) return res.status(404).json({ success: false, message: "Tournament not found" });
+            res.json({ success: true, data });
+        } catch (error: any) {
+            res.status(error.status || 500).json({ success: false, message: error.message });
+        }
+    },
+
+    async deleteReferee(req: any, res: any) {
+        try {
+            const deleted = await TournamentService.deleteReferee(req.params.id as string, req.params.refereeId as string);
+            if (!deleted) return res.status(404).json({ success: false, message: "Referee not found" });
+            res.json({ success: true, message: "Referee removed" });
+        } catch (error: any) {
+            res.status(error.status || 500).json({ success: false, message: error.message });
+        }
+    },
+
     // --- Tournament Engine ---
 
     async generateStructure(req: any, res: any) {
