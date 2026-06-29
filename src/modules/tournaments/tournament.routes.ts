@@ -34,6 +34,11 @@ router.post("/:id/teams/:teamId", TournamentController.addTeam);
 router.put("/:id/teams/:teamId/status", TournamentController.updateTeamStatus);
 router.delete("/:id/teams/:teamId", TournamentController.removeTeam);
 
+// --- Referees (tournament-level pool) ---
+router.get("/:id/referees", TournamentController.getReferees);
+router.post("/:id/referees", TournamentController.addReferee);
+router.delete("/:id/referees/:refereeId", TournamentController.deleteReferee);
+
 // --- Tournament Structure Engine ---
 router.post("/:id/generate-structure", TournamentController.generateStructure);
 router.post("/:id/seed-results", TournamentController.seedResults);

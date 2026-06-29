@@ -94,6 +94,10 @@ export class Tournament {
     @Column({ nullable: true })
     sponsors?: string;
 
+    // Tournament referee pool: [{ id, name, role, phone }]
+    @Column({ type: "json", nullable: true })
+    referees?: any;
+
     @OneToMany(() => TournamentTeam, (registration) => registration.tournament)
     teamRegistrations!: TournamentTeam[];
 

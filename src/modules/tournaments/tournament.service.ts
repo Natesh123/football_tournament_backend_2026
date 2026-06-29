@@ -200,6 +200,16 @@ function conflictError(message: string): Error {
     return err;
 }
 
+/** A request-validation failure, surfaced to the client as HTTP 400. */
+function validationError(message: string): Error {
+    const err = new Error(message);
+    (err as any).status = 400;
+    return err;
+}
+
+/** Fallback minimum squad size when a tournament has no explicit squadSize configured. */
+const DEFAULT_MIN_TEAM_MEMBERS = 16;
+
 /** Inclusive date-range overlap test: true when [aStart,aEnd] intersects [bStart,bEnd]. */
 function datesOverlap(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
     return new Date(aStart) <= new Date(bEnd) && new Date(bStart) <= new Date(aEnd);
@@ -511,6 +521,16 @@ export const TournamentService = {
 
         if (existing) return existing;
 
+        // A team must field a full squad (the tournament's configured squad size) before
+        // it can join. Falls back to a sane default when squadSize isn't set.
+        const requiredMembers = tournament.squadSize || DEFAULT_MIN_TEAM_MEMBERS;
+        const memberCount = await teamMemberRepo.count({ where: { team: { id: teamIdNum } } });
+        if (memberCount < requiredMembers) {
+            throw validationError(
+                `Team "${team.name}" needs at least ${requiredMembers} members before it can join this tournament (currently ${memberCount}).`
+            );
+        }
+
         // Enforce max teams limit
         const currentCount = await tournamentTeamRepo.count({
             where: { tournament: { id: tId } }
@@ -588,5 +608,44 @@ export const TournamentService = {
             team: { id: parseInt(teamId) }
         });
         return (result.affected ?? 0) > 0;
+    },
+
+    // ─── Referees (tournament-level pool) ─────────────────────────────────────
+    async getReferees(tournamentId: string): Promise<any[]> {
+        const tournament = await tournamentRepo.findOneBy({ id: parseInt(tournamentId) });
+        if (!tournament) return [];
+        return Array.isArray(tournament.referees) ? tournament.referees : [];
+    },
+
+    async addReferee(tournamentId: string, dto: { name?: string; role?: string; phone?: string }): Promise<any> {
+        const name = (dto?.name || '').trim();
+        if (!name) throw validationError('Referee name is required.');
+
+        const tournament = await tournamentRepo.findOneBy({ id: parseInt(tournamentId) });
+        if (!tournament) return null;
+
+        const referees = Array.isArray(tournament.referees) ? tournament.referees : [];
+        const referee = {
+            id: `${Date.now()}${Math.floor(Math.random() * 1000)}`,
+            name,
+            role: (dto?.role || '').trim() || 'Referee',
+            phone: (dto?.phone || '').trim(),
+        };
+        tournament.referees = [...referees, referee];
+        await tournamentRepo.save(tournament);
+        return referee;
+    },
+
+    async deleteReferee(tournamentId: string, refereeId: string): Promise<boolean> {
+        const tournament = await tournamentRepo.findOneBy({ id: parseInt(tournamentId) });
+        if (!tournament) return false;
+
+        const referees = Array.isArray(tournament.referees) ? tournament.referees : [];
+        const next = referees.filter((r: any) => String(r.id) !== String(refereeId));
+        if (next.length === referees.length) return false;
+
+        tournament.referees = next;
+        await tournamentRepo.save(tournament);
+        return true;
     }
 };
