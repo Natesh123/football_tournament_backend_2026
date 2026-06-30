@@ -295,7 +295,7 @@ export const TournamentService = {
             status: data.status || TournamentStatus.DRAFT,
             shortName: data.shortName,
             type: data.type || '11aside',
-            visibility: data.visibility,
+            visibility: data.visibility || 'public',
             sponsors: data.sponsors,
             participantType: data.participantType,
             minTeams: data.minTeams,
@@ -478,6 +478,9 @@ export const TournamentService = {
         if (!tournament.minTeams || !tournament.maxTeams || tournament.minTeams > tournament.maxTeams) {
             missing.push("Participation (team limits)");
         }
+        if (tournament.squadSize && tournament.playerLimit && tournament.squadSize > tournament.playerLimit) {
+            missing.push("Participation (squad size range)");
+        }
 
         const venue = await venueService.getVenue(tournament.id);
         if (!venue || !venue.primaryVenueName?.trim()) missing.push("Venues (primary venue)");
@@ -528,6 +531,14 @@ export const TournamentService = {
         if (memberCount < requiredMembers) {
             throw validationError(
                 `Team "${team.name}" needs at least ${requiredMembers} members before it can join this tournament (currently ${memberCount}).`
+            );
+        }
+
+        // A team must also not exceed the tournament's maximum squad size (playerLimit).
+        // Only enforced when an explicit maximum is configured.
+        if (tournament.playerLimit && memberCount > tournament.playerLimit) {
+            throw validationError(
+                `Team "${team.name}" exceeds the maximum squad size of ${tournament.playerLimit} for this tournament (currently ${memberCount}).`
             );
         }
 

@@ -886,7 +886,7 @@ export const MatchController = {
     async updateLiveState(req: Request, res: Response) {
         try {
             const { id } = req.params;
-            const { homeScore, awayScore, live_minute, match_period, addedMinutes, penaltyShootout } = req.body;
+            const { homeScore, awayScore, live_minute, match_period, addedMinutes, penaltyShootout, breakAction } = req.body;
 
             const matchRepo = AppDataSource.getRepository(Match);
             const match = await matchRepo.findOne({
@@ -919,6 +919,28 @@ export const MatchController = {
             // Referee added/stoppage time (null/0 clears it)
             if (addedMinutes !== undefined) {
                 match.addedMinutes = addedMinutes === null ? undefined : Number(addedMinutes);
+            }
+
+            // Break / resume: pause or restart the running clock and log it to the timeline.
+            if (breakAction === "pause" || breakAction === "resume") {
+                // Minutes carried into the current period + minutes elapsed since it (re)started.
+                let currentMinute = match.live_minute || 0;
+                if (match.periodStartedAt) {
+                    const elapsedMin = Math.floor((Date.now() - new Date(match.periodStartedAt).getTime()) / 60000);
+                    currentMinute += Math.max(0, elapsedMin);
+                }
+                const log: any[] = Array.isArray(match.breaks) ? match.breaks : [];
+                if (breakAction === "pause") {
+                    // Freeze the clock: bank the elapsed minutes and stop the running anchor.
+                    match.live_minute = currentMinute;
+                    match.periodStartedAt = null as any;
+                    log.push({ type: "break", minute: currentMinute, at: new Date() });
+                } else {
+                    // Resume: re-anchor the clock to now, keeping the banked minutes.
+                    match.periodStartedAt = new Date();
+                    log.push({ type: "resume", minute: currentMinute, at: new Date() });
+                }
+                match.breaks = log;
             }
 
             // Penalty shootout: store the kick log and recompute the tally from it

@@ -311,6 +311,20 @@ export class TournamentEngineService {
         }
         let venueIdx = 0;
 
+        // Pre-fill every generated match with the break duration and referees that
+        // were already configured on the Schedule step.
+        const tournament = await this.tournamentRepo.findOneBy({ id: parseInt(tournamentId) });
+        const refNames: string[] = (Array.isArray(tournament?.referees) ? tournament!.referees : [])
+            .map((r: any) => r?.name?.trim())
+            .filter((n: any): n is string => !!n);
+        const assignedReferees = refNames.length > 0 ? {
+            main: refNames[0] || '',
+            assistant1: refNames[1] || '',
+            assistant2: refNames[2] || '',
+            fourthOfficial: refNames[3] || ''
+        } : null;
+        const breakDuration = Number(config.breakTime) > 0 ? Number(config.breakTime) : null;
+
         let currentDate = new Date(config.startDate);
         const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
         const allowedDays = (config.matchDays && Object.values(config.matchDays).some(v => v))
@@ -353,6 +367,13 @@ export class TournamentEngineService {
                 }
             }
             if (!assigned) console.log(`[AutoSchedule] Failed to assign match ${match.id}`);
+
+            // Carry the configured break duration and referee assignment onto each match.
+            if (breakDuration !== null) match.breakDuration = breakDuration;
+            if (assignedReferees) {
+                match.referees = assignedReferees;
+                match.matchReferees = assignedReferees.main;
+            }
             await this.matchRepo.save(match);
         }
         console.log("[AutoSchedule] Completed auto-scheduling.");

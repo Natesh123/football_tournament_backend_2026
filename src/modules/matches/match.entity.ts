@@ -108,6 +108,10 @@ export class Match {
     @Column({ type: "datetime", nullable: true })
     periodStartedAt?: Date;
 
+    /** Live-match break log: [{ type: 'break' | 'resume', minute, at }]. */
+    @Column({ type: "json", nullable: true })
+    breaks?: any;
+
     @CreateDateColumn()
     createdAt!: Date;
 
