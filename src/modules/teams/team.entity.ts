@@ -53,6 +53,9 @@ export class Team {
     captainName?: string;
 
     @Column({ nullable: true })
+    contactNumber?: string;
+
+    @Column({ nullable: true })
     contactEmail?: string;
 
     @OneToMany(() => TournamentTeam, (registration) => registration.team)
