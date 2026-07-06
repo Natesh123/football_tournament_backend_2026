@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { TeamController } from "./team.controller";
-import { uploadTempLogo, uploadGalleryPhotos } from "../../middleware/upload.middleware";
+import { uploadTempLogo, uploadGalleryPhotos, uploadMemberPhoto } from "../../middleware/upload.middleware";
 import { authMiddleware, requireAdmin } from "../auth/auth.middleware";
 
 const router = Router();
@@ -28,6 +28,7 @@ import { TeamMemberController } from "./team-member.controller";
 const memberController = new TeamMemberController();
 
 router.get("/:teamId/members", memberController.getByTeamId);
+router.post("/:teamId/members/photo", requireAdmin, uploadMemberPhoto, memberController.uploadPhoto);
 router.post("/:teamId/members", requireAdmin, memberController.create);
 router.put("/members/:id", requireAdmin, memberController.update);
 router.delete("/members/:id", requireAdmin, memberController.delete);

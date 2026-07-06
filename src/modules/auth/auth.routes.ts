@@ -1,6 +1,6 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { register, verifyOtpController, login, resendOtp, validateTokenController, forgotPasswordController, resetPasswordController, verifyResetTokenController } from "./auth.controller";
+import { register, verifyOtpController, login, resendOtp, validateTokenController, forgotPasswordController, resetPasswordController, verifyResetOtpController } from "./auth.controller";
 
 const router = Router();
 
@@ -34,7 +34,7 @@ router.post("/login", loginLimiter, login);
 router.post("/resend-otp", otpLimiter, resendOtp);
 router.post("/validate-token", validateTokenController);
 router.post("/forgot-password", otpLimiter, forgotPasswordController);
-router.post("/verify-reset-token", otpLimiter, verifyResetTokenController);
+router.post("/verify-reset-otp", otpLimiter, verifyResetOtpController);
 router.post("/reset-password", resetPasswordController);
 
 export default router;

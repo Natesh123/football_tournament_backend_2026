@@ -1,13 +1,12 @@
 // @ts-ignore
 import bcrypt from "bcrypt";
-import crypto from "crypto";
 import { AppDataSource } from "../../config/data-source";
 import { User } from "../../entities/user.entity";
 import { UserOtp } from "../../entities/otp.entity";
 import { PendingUser } from "../../entities/pending_user.entity";
 import { generateOTP } from "../../utils/otp.util";
 import { generateToken, verifyToken } from "../../utils/jwt.util";
-import { sendOTP, sendPasswordResetEmail } from "../../utils/email.util";
+import { sendOTP, sendPasswordResetOtp } from "../../utils/email.util";
 import { Permission } from "../../entities/permission.entity";
 import { UserRole } from "../../entities/role.entity";
 
@@ -250,62 +249,58 @@ export async function resendOtpService(email: string) {
     return { message: "OTP resent successfully" };
 }
 
-export async function requestPasswordReset(email: string, platform: "mobile" | "web" = "web") {
+export async function requestPasswordReset(email: string) {
     const userRepo = AppDataSource.getRepository(User);
     const otpRepo = AppDataSource.getRepository(UserOtp);
 
     const user = await userRepo.findOne({ where: { email } });
-    // Always return success to avoid email enumeration
-    if (!user) return { message: "If that email exists, a reset link has been sent." };
+    // Always return the same message to avoid email enumeration.
+    if (!user) return { message: "If that email exists, a reset code has been sent." };
 
-    // Generate a cryptographically secure token
-    const rawToken = crypto.randomBytes(32).toString("hex");
-    const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex");
+    // Generate a 6-digit OTP (same pattern as registration).
+    const otp = generateOTP();
 
-    // Invalidate any existing reset tokens for this user (reuse user_id + 30-min expiry)
+    // Invalidate any existing unused reset OTPs for this user.
     await otpRepo.delete({ user_id: user.id, is_used: false });
 
     const entry = otpRepo.create({
         user_id: user.id,
-        otp: hashedToken,
-        expires_at: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
+        otp,
+        expires_at: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
         is_used: false,
     });
     await otpRepo.save(entry);
 
-    const resetLink = buildResetLink(rawToken, platform);
+    await sendPasswordResetOtp(email, otp);
 
-    await sendPasswordResetEmail(email, resetLink);
-
-    return { message: "If that email exists, a reset link has been sent." };
+    return { message: "If that email exists, a reset code has been sent." };
 }
 
 /**
- * Build the reset link for the requesting client.
- * - mobile: a custom-scheme deep link the Flutter app intercepts (configurable via MOBILE_RESET_LINK).
- * - web: the Angular admin reset page (configurable via FRONTEND_URL).
+ * Find an active (unused, unexpired) reset OTP matching the email + code.
+ * Returns the OTP entry, or null if no such active OTP exists.
  */
-function buildResetLink(rawToken: string, platform: "mobile" | "web"): string {
-    if (platform === "mobile") {
-        const base = process.env.MOBILE_RESET_LINK || "footballapp://reset-password";
-        return `${base}?token=${rawToken}`;
-    }
-    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:4200";
-    return `${frontendUrl}/reset-password?token=${rawToken}`;
-}
-
-/**
- * Validate a reset token WITHOUT consuming it. Used by the mobile app to decide
- * whether to show the "set new password" form before the user submits.
- */
-export async function verifyResetToken(rawToken: string): Promise<{ valid: boolean }> {
-    if (!rawToken) return { valid: false };
+async function findActiveResetOtp(email: string, otp: string): Promise<UserOtp | null> {
+    if (!email || !otp) return null;
+    const userRepo = AppDataSource.getRepository(User);
     const otpRepo = AppDataSource.getRepository(UserOtp);
-    const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex");
 
-    const entry = await otpRepo.findOne({ where: { otp: hashedToken, is_used: false } });
-    if (!entry) return { valid: false };
-    if (entry.expires_at < new Date()) return { valid: false };
+    const user = await userRepo.findOne({ where: { email } });
+    if (!user) return null;
+
+    const entry = await otpRepo.findOne({ where: { user_id: user.id, otp, is_used: false } });
+    if (!entry) return null;
+    if (entry.expires_at < new Date()) return null;
+    return entry;
+}
+
+/**
+ * Validate a reset OTP WITHOUT consuming it. Used by the clients to decide
+ * whether to open the "set new password" form before the user submits.
+ */
+export async function verifyResetOtp(email: string, otp: string): Promise<{ valid: boolean }> {
+    const entry = await findActiveResetOtp(email, otp);
+    if (!entry) throw new Error("Invalid or expired OTP.");
     return { valid: true };
 }
 
@@ -323,7 +318,7 @@ export function isStrongPassword(password: string): boolean {
     );
 }
 
-export async function resetPassword(rawToken: string, newPassword: string) {
+export async function resetPassword(email: string, otp: string, newPassword: string) {
     const userRepo = AppDataSource.getRepository(User);
     const otpRepo = AppDataSource.getRepository(UserOtp);
 
@@ -334,11 +329,8 @@ export async function resetPassword(rawToken: string, newPassword: string) {
         );
     }
 
-    const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex");
-
-    const entry = await otpRepo.findOne({ where: { otp: hashedToken, is_used: false } });
-    if (!entry) throw new Error("Invalid or expired reset token.");
-    if (entry.expires_at < new Date()) throw new Error("Reset token has expired. Please request a new one.");
+    const entry = await findActiveResetOtp(email, otp);
+    if (!entry) throw new Error("Invalid or expired OTP. Please request a new one.");
 
     const user = await userRepo.findOne({ where: { id: entry.user_id } });
     if (!user) throw new Error("User not found.");
@@ -346,8 +338,8 @@ export async function resetPassword(rawToken: string, newPassword: string) {
     user.password = await bcrypt.hash(newPassword, 10);
     await userRepo.save(user);
 
-    // Single-use: mark consumed, then remove every reset token for this user so no
-    // stale link remains usable. NOTE: JWTs here are stateless (no session store), so
+    // Single-use: mark consumed, then remove every reset OTP for this user so no
+    // stale code remains usable. NOTE: JWTs here are stateless (no session store), so
     // there are no server-side sessions to invalidate; a `tokenVersion` column would be
     // the future approach if forced logout-on-reset is required.
     entry.is_used = true;

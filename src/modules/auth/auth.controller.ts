@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { registerUser, verifyOtp, loginUser, resendOtpService, validateTokenService, requestPasswordReset, resetPassword, verifyResetToken } from "./auth.service";
+import { registerUser, verifyOtp, loginUser, resendOtpService, validateTokenService, requestPasswordReset, resetPassword, verifyResetOtp } from "./auth.service";
 
 
 export async function register(req: Request, res: Response) {
@@ -56,21 +56,20 @@ export async function validateTokenController(req: Request, res: Response) {
 
 export async function forgotPasswordController(req: Request, res: Response) {
     try {
-        const { email, platform } = req.body;
+        const { email } = req.body;
         if (!email) return res.status(400).json({ error: "Email is required." });
-        const client = platform === "mobile" ? "mobile" : "web";
-        const result = await requestPasswordReset(email, client);
+        const result = await requestPasswordReset(email);
         res.json(result);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
 }
 
-export async function verifyResetTokenController(req: Request, res: Response) {
+export async function verifyResetOtpController(req: Request, res: Response) {
     try {
-        const { token } = req.body;
-        if (!token) return res.status(400).json({ error: "Token is required." });
-        const result = await verifyResetToken(token);
+        const { email, otp } = req.body;
+        if (!email || !otp) return res.status(400).json({ error: "Email and OTP are required." });
+        const result = await verifyResetOtp(email, otp);
         res.json(result);
     } catch (err: any) {
         res.status(400).json({ error: err.message });
@@ -79,10 +78,10 @@ export async function verifyResetTokenController(req: Request, res: Response) {
 
 export async function resetPasswordController(req: Request, res: Response) {
     try {
-        const { token, newPassword } = req.body;
-        if (!token || !newPassword) return res.status(400).json({ error: "Token and new password are required." });
+        const { email, otp, newPassword } = req.body;
+        if (!email || !otp || !newPassword) return res.status(400).json({ error: "Email, OTP and new password are required." });
         if (newPassword.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters." });
-        const result = await resetPassword(token, newPassword);
+        const result = await resetPassword(email, otp, newPassword);
         res.json(result);
     } catch (err: any) {
         res.status(400).json({ error: err.message });

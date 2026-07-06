@@ -98,6 +98,11 @@ export class Tournament {
     @Column({ type: "json", nullable: true })
     referees?: any;
 
+    // Wizard settings with no dedicated table: schedule timing (match/half/break
+    // durations, play days, time slots) and completed-tab progress. Stored as JSON.
+    @Column({ type: "json", nullable: true })
+    settings?: any;
+
     @OneToMany(() => TournamentTeam, (registration) => registration.tournament)
     teamRegistrations!: TournamentTeam[];
 
