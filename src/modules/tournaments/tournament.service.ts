@@ -252,6 +252,11 @@ export const TournamentService = {
             const presentationDto = await presentationService.getPresentation(t.id);
             if (presentationDto) result.settings.presentation = mapDtoToPresentation(presentationDto);
 
+            // Merge back the JSON-persisted settings (schedule timing + wizard progress).
+            const stored: any = (t as any).settings || {};
+            if (stored.schedule) result.settings.schedule = stored.schedule;
+            if (stored.completedTabs) result.settings.completedTabs = stored.completedTabs;
+
             return result;
         }));
     },
@@ -280,6 +285,11 @@ export const TournamentService = {
 
         const presentationDto = await presentationService.getPresentation(t.id);
         if (presentationDto) result.settings.presentation = mapDtoToPresentation(presentationDto);
+
+        // Merge back the JSON-persisted settings (schedule timing + wizard progress).
+        const stored: any = (t as any).settings || {};
+        if (stored.schedule) result.settings.schedule = stored.schedule;
+        if (stored.completedTabs) result.settings.completedTabs = stored.completedTabs;
 
         return result;
     },
@@ -319,6 +329,16 @@ export const TournamentService = {
         }
         if (data.organizer) {
             tournament.organizer = data.organizer as any;
+        }
+
+        // Persist wizard settings with no dedicated table (schedule timing +
+        // completed-tab progress) into the generic `settings` JSON column.
+        if ((data as any).settings) {
+            const s = (data as any).settings;
+            const persisted: any = { ...(tournament.settings || {}) };
+            if (s.schedule !== undefined) persisted.schedule = s.schedule;
+            if (s.completedTabs !== undefined) persisted.completedTabs = s.completedTabs;
+            tournament.settings = persisted;
         }
 
         const saved = await tournamentRepo.save(tournament);
@@ -418,6 +438,16 @@ export const TournamentService = {
                 if (formatData.drawPoints !== undefined) tournament.format.draw_points = formatData.drawPoints;
                 if (formatData.lossPoints !== undefined) tournament.format.loss_points = formatData.lossPoints;
             }
+        }
+
+        // Persist wizard settings with no dedicated table (schedule timing +
+        // completed-tab progress) into the generic `settings` JSON column.
+        if ((data as any).settings) {
+            const s = (data as any).settings;
+            const persisted: any = { ...(tournament.settings || {}) };
+            if (s.schedule !== undefined) persisted.schedule = s.schedule;
+            if (s.completedTabs !== undefined) persisted.completedTabs = s.completedTabs;
+            tournament.settings = persisted;
         }
 
         const saved = await tournamentRepo.save(tournament);

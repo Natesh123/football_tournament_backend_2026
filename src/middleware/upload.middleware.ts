@@ -82,6 +82,29 @@ export const uploadGalleryPhotos = multer({
 }).array('photos', 10);
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TEAM MEMBER PHOTO  (single file → uploads/members/)
+// Kept in a flat folder (not nested per team) so both the create route
+// (/:teamId/members) and the edit route (/members/:id, no teamId) can share it.
+// ─────────────────────────────────────────────────────────────────────────────
+const memberPhotoDir = path.join(UPLOADS_ROOT, 'members');
+ensureDir(memberPhotoDir);
+
+const memberPhotoStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => {
+        ensureDir(memberPhotoDir);
+        cb(null, memberPhotoDir);
+    },
+    filename: (_req, file, cb) => cb(null, uniqueFilename(file))
+});
+
+/** Upload a single team-member photo (field name: "photo"). */
+export const uploadMemberPhoto = multer({
+    storage: memberPhotoStorage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+    fileFilter: imageFileFilter
+}).single('photo');
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MATCH PHOTOS  (future — uploads/matches/{matchId}/)
 // ─────────────────────────────────────────────────────────────────────────────
 const matchPhotoStorage = multer.diskStorage({

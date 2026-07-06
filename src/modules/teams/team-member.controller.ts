@@ -42,4 +42,21 @@ export class TeamMemberController {
             res.status(500).json({ message: "Failed to remove team member", error });
         }
     };
+
+    /**
+     * Store a member photo and return its public URL. Kept separate from
+     * create/update so those stay JSON (no multipart type coercion); the client
+     * uploads the picked file here first, then saves the returned `photoUrl`.
+     */
+    uploadPhoto = async (req: Request, res: Response) => {
+        try {
+            const file = (req as any).file as Express.Multer.File | undefined;
+            if (!file) {
+                return res.status(400).json({ message: "No photo uploaded" });
+            }
+            res.status(201).json({ photoUrl: `/uploads/members/${file.filename}` });
+        } catch (error) {
+            res.status(500).json({ message: "Failed to upload member photo", error });
+        }
+    };
 }
