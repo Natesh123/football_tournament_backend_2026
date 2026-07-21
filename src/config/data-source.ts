@@ -28,6 +28,7 @@ import { TournamentPresentation } from "../modules/tournaments/presentation/pres
 import { PendingUser } from "../entities/pending_user.entity";
 import { Sponsor } from "../entities/sponsor.entity";
 import { TournamentSponsor } from "../modules/tournaments/tournament-sponsor.entity";
+import { Plan } from "../modules/plans/plan.entity";
 
 dotenv.config();
 
@@ -41,7 +42,7 @@ export const AppDataSource = new DataSource({
     synchronize: false, // Auto-create tables disabled to prevent crash on JSON vs LONGTEXT drift
     migrationsRun: true,
     logging: false,
-    entities: [User, UserOtp, UserRole, Permission, Tournament, Team, TeamMember, Organizer, TournamentTeam, TournamentFormat, TournamentTiebreaker, FormatGroupSettings, FormatKnockoutSettings, FormatStage, Group, GroupTeam, Match, MatchSource, MatchEvent, Bracket, TournamentRules, TournamentVenue, TournamentFinance, TournamentPrizePool, TournamentPresentation, PendingUser, Sponsor, TournamentSponsor],
+    entities: [User, UserOtp, UserRole, Permission, Tournament, Team, TeamMember, Organizer, TournamentTeam, TournamentFormat, TournamentTiebreaker, FormatGroupSettings, FormatKnockoutSettings, FormatStage, Group, GroupTeam, Match, MatchSource, MatchEvent, Bracket, TournamentRules, TournamentVenue, TournamentFinance, TournamentPrizePool, TournamentPresentation, PendingUser, Sponsor, TournamentSponsor, Plan],
     migrations: ["src/migrations/*.ts"],
     subscribers: [],
 });

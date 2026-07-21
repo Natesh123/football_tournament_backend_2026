@@ -22,6 +22,7 @@ const ROLES: { name: string; module_access: Record<string, boolean> }[] = [
             can_tournaments: true,
             can_teams: true,
             can_settings: true,
+            can_plans: true,
         },
     },
     {

@@ -12,6 +12,7 @@ import publicRoutes from "./modules/public/public.routes";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes";
 import sponsorRoutes from "./modules/sponsors/sponsors.routes";
 import tournamentSponsorRoutes from "./modules/tournaments/tournament-sponsors.routes";
+import planRoutes from "./modules/plans/plan.routes";
 
 const app = express();
 
@@ -50,6 +51,7 @@ app.use("/api/public", publicRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/sponsors", sponsorRoutes);
 app.use("/api/tournament-sponsors", tournamentSponsorRoutes);
+app.use("/api/plans", planRoutes);
 
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

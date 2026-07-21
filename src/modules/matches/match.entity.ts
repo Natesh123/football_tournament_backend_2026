@@ -30,10 +30,13 @@ export class Match {
     @ManyToOne(() => Tournament, (tournament) => tournament.matches, { onDelete: "CASCADE" })
     tournament!: Tournament;
 
-    @ManyToOne(() => Team, { nullable: true })
+    // SET NULL so deleting a team from the shared registry doesn't fail on this
+    // FK; the match row (and the opponent's record) survives with a null slot,
+    // matching the nullable "TBD" design used for bracket placeholders.
+    @ManyToOne(() => Team, { nullable: true, onDelete: "SET NULL" })
     homeTeam?: Team;
 
-    @ManyToOne(() => Team, { nullable: true })
+    @ManyToOne(() => Team, { nullable: true, onDelete: "SET NULL" })
     awayTeam?: Team;
 
     @Column({ type: "int", default: 0 })

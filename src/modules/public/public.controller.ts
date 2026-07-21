@@ -6,8 +6,22 @@ import { Match } from "../matches/match.entity";
 import { MatchEvent, MatchEventType } from "../matches/match-event.entity";
 import { TeamMember } from "../teams/team-member.entity";
 import { sendContactEmail } from "../../utils/email.util";
+import { PlanService } from "../plans/plan.service";
+
+const planService = new PlanService();
 
 export const PublicController = {
+    /** Active, landing-visible subscription plans for the public pricing section (max 5). */
+    async getPlans(_req: any, res: any) {
+        try {
+            const plans = await planService.getPublicPlans();
+            res.json({ success: true, data: plans });
+        } catch (error: any) {
+            console.error("Public Plans Error:", error);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
     async getPortalData(req: any, res: any) {
         try {
             const tournamentId = parseInt(req.params.id);

@@ -10,6 +10,52 @@ import { sendOTP, sendPasswordResetOtp } from "../../utils/email.util";
 import { Permission } from "../../entities/permission.entity";
 import { UserRole } from "../../entities/role.entity";
 
+function adminModuleAccess() {
+    return {
+        can_dashboard: true,
+        can_tournaments: true,
+        can_teams: true,
+        can_roles: true,
+        can_permissions: true,
+        can_users: true,
+        can_settings: true,
+        can_plans: true,
+    };
+}
+
+/**
+ * Fallback module access for a role that has no explicit Permission row yet.
+ * Mirrors the seeded "user"/"organizer" defaults so a freshly registered account
+ * can still reach at least the Tournaments module instead of being bounced back
+ * to the login screen — which previously looked like an instant auto-logout right
+ * after a successful login.
+ */
+function defaultModuleAccess(roleName?: string) {
+    if ((roleName || "").toLowerCase() === "admin") return adminModuleAccess();
+    return {
+        can_dashboard: false,
+        can_tournaments: true,
+        can_teams: false,
+        can_settings: false,
+    };
+}
+
+/**
+ * Resolves the effective permissions returned to the client. Admins always get
+ * every module; everyone else gets their stored Permission row, or a sensible
+ * default when none exists so no authenticated user ends up permission-less.
+ */
+function resolvePermissions(user: any, permissionRow: any) {
+    const roleName = user?.userRole?.name;
+    if (user?.roleId === 1 || (roleName || "").toLowerCase() === "admin") {
+        return { module_access: adminModuleAccess() };
+    }
+    if (permissionRow && permissionRow.module_access) {
+        return permissionRow;
+    }
+    return { module_access: defaultModuleAccess(roleName) };
+}
+
 export async function registerUser(email: string, password: string, user_name: string, phone_number: string) {
     const userRepo = AppDataSource.getRepository(User);
     const pendingRepo = AppDataSource.getRepository(PendingUser);
@@ -63,7 +109,9 @@ export async function verifyOtp(email: string, otp: string) {
     const roleRepo = AppDataSource.getRepository(UserRole);
     const userRole = await roleRepo.findOne({ where: { name: 'user' } });
 
-    // Create the actual user
+    // Create the actual user. New accounts start INACTIVE (state 0) and must be
+    // approved by an admin before they can log in — so we intentionally do NOT
+    // return a token/user here (no auto-login).
     // @ts-ignore
     const user = userRepo.create({
         email: pendingUser.email,
@@ -71,7 +119,7 @@ export async function verifyOtp(email: string, otp: string) {
         user_name: pendingUser.user_name,
         phone_number: pendingUser.phone_number,
         roleId: userRole ? userRole.id : undefined,
-        state: 1,
+        state: 0,
         is_verified: true
     });
     await userRepo.save(user);
@@ -79,31 +127,9 @@ export async function verifyOtp(email: string, otp: string) {
     // Delete pending registration
     await pendingRepo.delete({ email });
 
-    const permRepo = AppDataSource.getRepository(Permission);
-    const permissions = await permRepo.findOne({ where: { roleId: user.roleId || 0 } });
-
-    const token = generateToken({
-        id: user.id,
-        email: user.email,
-        user_name: user.user_name,
-        role: user.userRole?.name || 'user',
-        roleId: user.roleId,
-        permissions
-    });
-
     return {
-        message: "OTP verified, registration complete",
-        token,
-        user: {
-            id: user.id,
-            email: user.email,
-            user_name: user.user_name,
-            phone_number: user.phone_number,
-            role: user.userRole?.name || 'user',
-            roleId: user.roleId,
-            state: user.state,
-            permissions
-        }
+        message: "Your account has been created successfully. Please wait for admin approval before logging in.",
+        pendingApproval: true
     };
 }
 
@@ -129,25 +155,22 @@ export async function loginUser(email: string, password: string) {
         console.warn(`[Login] Password mismatch for email: '${cleanEmail}'`);
         throw new Error("Invalid password");
     }
+
+    // Only Active accounts (state === 1) may log in. New registrations start
+    // inactive and require manual admin approval.
+    if (user.state !== 1) {
+        const adminEmail = process.env.ADMIN_CONTACT_EMAIL || "admin@atbsports.com";
+        const adminPhone = process.env.ADMIN_CONTACT_PHONE || "N/A";
+        throw new Error(
+            `Your account is awaiting admin approval. Please contact the administrator. Email: ${adminEmail} | Phone: ${adminPhone}`
+        );
+    }
+
     console.log(`[Login] Successful authentication for user ID: ${user.id}`);
 
     const permRepo = AppDataSource.getRepository(Permission);
-    let permissions: any = await permRepo.findOne({ where: { roleId: user.roleId || 0 } });
-
-    // Requirement: If role_id = 1 (admin), then all modules should be visible
-    if (user.roleId === 1) {
-        permissions = {
-            module_access: {
-                can_dashboard: true,
-                can_tournaments: true,
-                can_teams: true,
-                can_roles: true,
-                can_permissions: true,
-                can_users: true,
-                can_settings: true
-            }
-        };
-    }
+    const permissionRow = await permRepo.findOne({ where: { roleId: user.roleId || 0 } });
+    const permissions = resolvePermissions(user, permissionRow);
 
     const token = generateToken({
         id: user.id,
@@ -186,22 +209,8 @@ export async function validateTokenService(token: string) {
         if (!user) throw new Error("User not found");
 
         const permRepo = AppDataSource.getRepository(Permission);
-        let permissions: any = await permRepo.findOne({ where: { roleId: user.roleId || 0 } });
-
-        // Requirement: If role_id = 1 (admin), then all modules should be visible
-        if (user.roleId === 1) {
-            permissions = {
-                module_access: {
-                    can_dashboard: true,
-                    can_tournaments: true,
-                    can_teams: true,
-                    can_roles: true,
-                    can_permissions: true,
-                    can_users: true,
-                    can_settings: true
-                }
-            };
-        }
+        const permissionRow = await permRepo.findOne({ where: { roleId: user.roleId || 0 } });
+        const permissions = resolvePermissions(user, permissionRow);
 
         return {
             valid: true,
