@@ -111,6 +111,18 @@ export const TournamentController = {
                 });
             }
 
+            // ── Plan Restriction Checks ─────────────────────────────────────────
+            const { planRestrictionService } = require("../plans/planRestriction.service");
+            await planRestrictionService.assertCanCreateTournament(req.user);
+
+            if (status === "registration_open" || regOpenDate) {
+                await planRestrictionService.assertCanUseOnlineRegistration(req.user);
+            }
+
+            if (regFee && Number(regFee) > 0) {
+                await planRestrictionService.assertCanCollectPayment(req.user);
+            }
+
             const tournament = await TournamentService.create({
                 ownerId: req.user?.id,
                 name,
@@ -138,7 +150,7 @@ export const TournamentController = {
 
             res.status(201).json({ success: true, data: tournament });
         } catch (error: any) {
-            res.status(500).json({ success: false, message: error.message });
+            res.status(error.status || 500).json({ success: false, message: error.message });
         }
     },
 

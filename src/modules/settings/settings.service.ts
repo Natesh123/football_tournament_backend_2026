@@ -71,7 +71,7 @@ export async function getAllUsers() {
 
 export async function upsertUser(userData: any) {
     const userRepository = AppDataSource.getRepository(User);
-    const { id, email, user_name, phone_number, roleId, state } = userData;
+    const { id, email, user_name, phone_number, roleId, state, plan } = userData;
 
     let user;
     if (id) {
@@ -83,6 +83,7 @@ export async function upsertUser(userData: any) {
         user.email = email || user.email;
         user.user_name = user_name || user.user_name;
         user.phone_number = phone_number || user.phone_number;
+        user.plan = plan !== undefined ? plan : (user.plan || "Free");
         if (roleId) {
             user.roleId = roleId;
             user.userRole = { id: roleId } as any;
@@ -99,6 +100,7 @@ export async function upsertUser(userData: any) {
             phone_number,
             password: hashedPassword,
             roleId,
+            plan: plan || "Free",
             state: state !== undefined ? state : 1,
             is_verified: true
         });

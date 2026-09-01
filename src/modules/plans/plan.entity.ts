@@ -53,6 +53,18 @@ export class Plan {
     @Column({ type: "json", nullable: true })
     features?: string[];
 
+    @Column({ type: "boolean", default: false })
+    allowOnlineRegistration!: boolean;
+
+    @Column({ type: "boolean", default: false })
+    allowPayment!: boolean;
+
+    @Column({ type: "varchar", default: "Basic" })
+    reportsLevel!: string;
+
+    @Column({ type: "boolean", default: false })
+    allowCustomBranding!: boolean;
+
     @Column({ type: "int", default: 0 })
     displayOrder!: number;
 

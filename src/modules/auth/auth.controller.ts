@@ -4,8 +4,8 @@ import { registerUser, verifyOtp, loginUser, resendOtpService, validateTokenServ
 
 export async function register(req: Request, res: Response) {
     try {
-        const { email, password, user_name, phone_number } = req.body;
-        const result = await registerUser(email, password, user_name, phone_number);
+        const { email, password, user_name, phone_number, plan } = req.body;
+        const result = await registerUser(email, password, user_name, phone_number, plan);
         res.json(result);
     } catch (err: any) {
         res.status(400).json({ error: err.message });

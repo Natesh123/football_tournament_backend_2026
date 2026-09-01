@@ -56,7 +56,7 @@ function resolvePermissions(user: any, permissionRow: any) {
     return { module_access: defaultModuleAccess(roleName) };
 }
 
-export async function registerUser(email: string, password: string, user_name: string, phone_number: string) {
+export async function registerUser(email: string, password: string, user_name: string, phone_number: string, plan?: string) {
     const userRepo = AppDataSource.getRepository(User);
     const pendingRepo = AppDataSource.getRepository(PendingUser);
 
@@ -68,6 +68,7 @@ export async function registerUser(email: string, password: string, user_name: s
 
     const hashed = await bcrypt.hash(password, 10);
     const otp = generateOTP();
+    const selectedPlan = plan || "Free";
 
     // Save or update pending registration
     let pendingUser = await pendingRepo.findOne({ where: { email } });
@@ -75,6 +76,7 @@ export async function registerUser(email: string, password: string, user_name: s
         pendingUser.user_name = user_name;
         pendingUser.password = hashed;
         pendingUser.phone_number = phone_number;
+        pendingUser.plan = selectedPlan;
         pendingUser.otp = otp;
         pendingUser.expires_at = new Date(Date.now() + 5 * 60000);
     } else {
@@ -83,6 +85,7 @@ export async function registerUser(email: string, password: string, user_name: s
             user_name,
             password: hashed,
             phone_number,
+            plan: selectedPlan,
             otp,
             expires_at: new Date(Date.now() + 5 * 60000)
         });
@@ -105,21 +108,28 @@ export async function verifyOtp(email: string, otp: string) {
     if (pendingUser.otp !== otp) throw new Error("Invalid OTP");
     if (new Date() > pendingUser.expires_at) throw new Error("OTP expired");
 
-    // Find the 'user' role
+    // Find the 'organizer' role (fallback to 'user' if not found)
     const roleRepo = AppDataSource.getRepository(UserRole);
-    const userRole = await roleRepo.findOne({ where: { name: 'user' } });
+    let assignedRole = await roleRepo.findOne({ where: [{ name: 'organizer' }, { name: 'Organizer' }] });
+    if (!assignedRole) {
+        assignedRole = await roleRepo.findOne({ where: [{ name: 'user' }, { name: 'User' }] });
+    }
 
-    // Create the actual user. New accounts start INACTIVE (state 0) and must be
-    // approved by an admin before they can log in — so we intentionally do NOT
-    // return a token/user here (no auto-login).
+    const selectedPlan = (pendingUser.plan || "Free").trim();
+    const isFreePlan = selectedPlan.toLowerCase() === "free";
+
+    // Free plan organizers start in ACTIVE state (state 1) so they can log in immediately.
+    const initialStatus = isFreePlan ? 1 : 1; // Set to active (1) for web registrations
+
     // @ts-ignore
     const user = userRepo.create({
         email: pendingUser.email,
         password: pendingUser.password,
         user_name: pendingUser.user_name,
         phone_number: pendingUser.phone_number,
-        roleId: userRole ? userRole.id : undefined,
-        state: 0,
+        plan: selectedPlan,
+        roleId: assignedRole ? assignedRole.id : undefined,
+        state: initialStatus,
         is_verified: true
     });
     await userRepo.save(user);
@@ -128,8 +138,10 @@ export async function verifyOtp(email: string, otp: string) {
     await pendingRepo.delete({ email });
 
     return {
-        message: "Your account has been created successfully. Please wait for admin approval before logging in.",
-        pendingApproval: true
+        message: isFreePlan
+            ? "Your organizer account has been created and activated successfully! You can now log in."
+            : "Your account has been created successfully. You can now log in.",
+        pendingApproval: false
     };
 }
 
@@ -172,12 +184,16 @@ export async function loginUser(email: string, password: string) {
     const permissionRow = await permRepo.findOne({ where: { roleId: user.roleId || 0 } });
     const permissions = resolvePermissions(user, permissionRow);
 
+    const { planRestrictionService } = require("../plans/planRestriction.service");
+    const planDetails = await planRestrictionService.getUserPlanInfo(user);
+
     const token = generateToken({
         id: user.id,
         email: user.email,
         user_name: user.user_name,
         role: user.userRole?.name || 'user',
         roleId: user.roleId,
+        plan: user.plan || 'Free',
         permissions
     });
 
@@ -192,6 +208,8 @@ export async function loginUser(email: string, password: string) {
             role: user.userRole?.name || 'user',
             roleId: user.roleId,
             state: user.state,
+            plan: user.plan || 'Free',
+            planDetails,
             permissions
         }
     };
@@ -212,6 +230,9 @@ export async function validateTokenService(token: string) {
         const permissionRow = await permRepo.findOne({ where: { roleId: user.roleId || 0 } });
         const permissions = resolvePermissions(user, permissionRow);
 
+        const { planRestrictionService } = require("../plans/planRestriction.service");
+        const planDetails = await planRestrictionService.getUserPlanInfo(user);
+
         return {
             valid: true,
             user: {
@@ -222,6 +243,8 @@ export async function validateTokenService(token: string) {
                 role: user.userRole?.name || 'user',
                 roleId: user.roleId,
                 state: user.state,
+                plan: user.plan || 'Free',
+                planDetails,
                 permissions
             }
         };

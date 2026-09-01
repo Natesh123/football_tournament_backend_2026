@@ -15,10 +15,13 @@ export class TeamMemberController {
 
     create = async (req: Request, res: Response) => {
         try {
+            const { planRestrictionService } = require("../plans/planRestriction.service");
+            await planRestrictionService.assertCanAddMember((req as any).user, req.body?.role);
+
             const member = await this.memberService.create(req.params.teamId as string, req.body);
             res.status(201).json(member);
-        } catch (error) {
-            res.status(500).json({ message: "Failed to add team member", error });
+        } catch (error: any) {
+            res.status(error.status || 500).json({ message: error.message || "Failed to add team member", error: error.message });
         }
     };
 

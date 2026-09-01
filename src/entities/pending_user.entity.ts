@@ -20,6 +20,9 @@ export class PendingUser {
     @Column()
     expires_at!: Date;
 
+    @Column({ nullable: true, default: "Free" })
+    plan!: string;
+
     @CreateDateColumn()
     created_at!: Date;
 }

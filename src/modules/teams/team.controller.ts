@@ -34,6 +34,9 @@ export class TeamController {
     create = async (req: Request, res: Response) => {
         const tempFile = (req as any).file as Express.Multer.File | undefined;
         try {
+            const { planRestrictionService } = require("../plans/planRestriction.service");
+            await planRestrictionService.assertCanCreateTeam((req as any).user);
+
             // 1. Save team without logo first (to get the teamId)
             const team = await this.teamService.create({
                 ...req.body,

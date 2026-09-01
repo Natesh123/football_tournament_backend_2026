@@ -30,4 +30,7 @@ export class User {
 
     @Column({ default: false })
     is_verified!: boolean;
+
+    @Column({ nullable: true, default: "Free" })
+    plan!: string;
 }
