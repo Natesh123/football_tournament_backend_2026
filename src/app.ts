@@ -1,0 +1,67 @@
+import "reflect-metadata";
+import express from "express";
+import cors from "cors";
+import path from "path";
+import healthRoutes from "./modules/health/health.routes";
+import authRoutes from "./modules/auth/auth.routes";
+import settingsRoutes from "./modules/settings/settings.routes";
+import tournamentRoutes from "./modules/tournaments/tournament.routes";
+import { teamRoutes } from "./modules/teams/team.routes";
+import matchRoutes from "./modules/matches/match.routes";
+import publicRoutes from "./modules/public/public.routes";
+import dashboardRoutes from "./modules/dashboard/dashboard.routes";
+import sponsorRoutes from "./modules/sponsors/sponsors.routes";
+import tournamentSponsorRoutes from "./modules/tournaments/tournament-sponsors.routes";
+import planRoutes from "./modules/plans/plan.routes";
+import notificationRoutes from "./modules/notifications/notification.routes";
+import userPlanRoutes from "./modules/user-plan/user-plan.routes";
+
+const app = express();
+
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:4200")
+    .split(",")
+    .map(o => o.trim())
+    .filter(Boolean);
+
+app.use(cors({
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+        // Allow requests with no origin (mobile apps, curl, server-to-server)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        callback(new Error(`CORS: origin ${origin} not allowed`));
+    },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true
+}));
+// Base64-encoded tournament logo/cover images are sent inline in the JSON body,
+// so allow a comfortable headroom above the default 100kb (and the previous 5mb).
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ limit: '25mb', extended: true }));
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+
+
+// Routes
+app.use("/api/health", healthRoutes);
+app.use("/auth", authRoutes);
+app.use("/api/settings", settingsRoutes);
+app.use("/api/tournaments", tournamentRoutes);
+app.use("/api/teams", teamRoutes);
+app.use("/api/matches", matchRoutes);
+app.use("/api/public", publicRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/sponsors", sponsorRoutes);
+app.use("/api/tournament-sponsors", tournamentSponsorRoutes);
+app.use("/api/plans", planRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/user-plan", userPlanRoutes);
+
+// Global Error Handler
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("Unhandled Error:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+});
+
+export default app;
+// trigger nodemon restart
